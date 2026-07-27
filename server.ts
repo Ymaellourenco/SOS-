@@ -106,7 +106,11 @@ async function startServer() {
     }
   };
 
-  app.use(cors({
+  // Aplicado só a "/api" — nunca aos ficheiros estáticos da própria app (CSS, JS,
+  // imagens). CORS existe para proteger a API contra pedidos de outras origens;
+  // aplicá-lo a tudo bloqueava até os próprios ficheiros da app a carregarem-se a
+  // si mesma, resultando num ecrã em branco com erros 500 nos assets.
+  app.use('/api', cors({
     origin: (origin, callback) => {
       // Pedidos sem "Origin" (ex: apps nativas via fetch nativo, curl, health checks)
       // são permitidos — não há política de mesma-origem para os bloquear de qualquer forma.
