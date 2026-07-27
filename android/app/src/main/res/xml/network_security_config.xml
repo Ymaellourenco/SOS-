@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A partir do Android 9 (API 28), o sistema bloqueia por defeito qualquer pedido
+  HTTP simples (sem HTTPS) feito pela app — é uma proteção do próprio Android,
+  separada da proteção "Mixed Content" do WebView. Sem isto, os pedidos ao
+  servidor de desenvolvimento (que só tem HTTP, não HTTPS) seriam sempre
+  bloqueados, mesmo com "allowMixedContent" ativo no Capacitor.
+
+  Aqui só permitimos HTTP para os endereços exatos do servidor de testes —
+  nunca para o resto da internet — para não abrir uma falha de segurança maior
+  do que o necessário.
+
+  IMPORTANTE: remove ou ajusta este ficheiro antes de publicares a app a sério,
+  já que nessa altura o servidor terá HTTPS a sério e isto deixa de ser preciso.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Emulador do Android Studio (endereço fixo especial) -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- Telemóvel real, na mesma rede Wi-Fi do computador — atualiza se o IP mudar -->
+        <domain includeSubdomains="false">192.168.1.69</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

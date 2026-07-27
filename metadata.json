@@ -1,0 +1,12 @@
+{
+  "name": "SOS Mais",
+  "description": "Sistema nacional de alerta, sobrevivência e resposta a emergências com análise de terreno, detecção de riscos hídricos, verificação de segurança de links/IPs e monitorização de processos de IA.",
+  "requestFramePermissions": [
+    "geolocation",
+    "notifications",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

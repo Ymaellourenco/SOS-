@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+  }
+
+  body {
+    -webkit-tap-highlight-color: transparent;
+    background: #fbfbfd;
+    color: #1d1d1f;
+    overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Só bloqueamos a seleção em controlos interativos (botões, links, ícones) — evita
+     seleção acidental ao tocar neles — mas o texto normal (mensagens, moradas, números
+     de telefone, guias) continua selecionável e copiável, com o rato ou por toque. */
+  button, a, [role="button"], svg {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .ios-shadow {
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+    will-change: transform, opacity;
+    content-visibility: auto;
+  }
+
+  /* Hide scrollbar while keeping functionality */
+  *::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  * {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+    -webkit-overflow-scrolling: touch; /* Force smooth touch scroll on iOS */
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/80 backdrop-blur-sm border border-white/20;
+  }
+  .glass-dark {
+    @apply bg-black/70 backdrop-blur-md border border-white/10;
+  }
+  .ios-shadow {
+    box-shadow: 0 4px 12px -1px rgba(0, 0, 0, 0.05), 0 2px 8px -1px rgba(0, 0, 0, 0.03);
+    will-change: transform;
+  }
+}

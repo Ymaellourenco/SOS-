@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOS Mais — Acompanhamento de Localização</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0b; color: #fff; }
+    #header {
+      background: #EE3633; padding: 14px 18px; display: flex; align-items: center; gap: 10px;
+      font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; font-size: 14px;
+    }
+    #header img { width: 28px; height: 28px; border-radius: 8px; }
+    #status {
+      padding: 12px 18px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #94a3b8; display: flex; align-items: center; gap: 8px;
+    }
+    #status .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    #map { height: calc(100vh - 90px); width: 100%; }
+    #expired, #loading {
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      height: calc(100vh - 90px); text-align: center; padding: 24px; gap: 12px;
+    }
+    #expired h2, #loading h2 { font-size: 18px; font-weight: 900; text-transform: uppercase; }
+    #expired p, #loading p { color: #94a3b8; font-size: 13px; max-width: 320px; }
+    .visible { display: flex !important; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <img src="/icons/icon-192.png" alt="SOS Mais" />
+    <span>Acompanhamento SOS Mais</span>
+  </div>
+  <div id="status"><span class="dot"></span><span id="statusText">A carregar localização...</span></div>
+  <div id="map"></div>
+  <div id="loading" class="visible">
+    <h2>A carregar...</h2>
+    <p>A ligar à localização partilhada.</p>
+  </div>
+  <div id="expired">
+    <h2>⚠️ Partilha Terminada</h2>
+    <p>Esta partilha de localização já não está ativa — pode ter expirado (dura no máximo 3 horas) ou a pessoa parou-a manualmente. Se está preocupado, contacte-a diretamente ou ligue 112.</p>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const statusEl = document.getElementById('statusText');
+    const mapEl = document.getElementById('map');
+    const loadingEl = document.getElementById('loading');
+    const expiredEl = document.getElementById('expired');
+
+    if (!token) {
+      loadingEl.classList.remove('visible');
+      expiredEl.classList.add('visible');
+      expiredEl.querySelector('p').textContent = 'Este link não é válido — falta o código de acompanhamento.';
+    } else {
+      let map = null;
+      let marker = null;
+      let circle = null;
+      let firstLoad = true;
+
+      async function poll() {
+        try {
+          const res = await fetch('/api/live-location/' + encodeURIComponent(token));
+          if (!res.ok) {
+            loadingEl.classList.remove('visible');
+            mapEl.style.display = 'none';
+            document.getElementById('status').style.display = 'none';
+            expiredEl.classList.add('visible');
+            return;
+          }
+          const data = await res.json();
+          if (data.lat == null || data.lng == null) {
+            statusText.textContent = 'À espera da primeira localização...';
+            return;
+          }
+
+          if (firstLoad) {
+            loadingEl.classList.remove('visible');
+            map = L.map('map').setView([data.lat, data.lng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '&copy; OpenStreetMap'
+            }).addTo(map);
+            marker = L.marker([data.lat, data.lng]).addTo(map);
+            circle = L.circle([data.lat, data.lng], { radius: 80, color: '#EE3633', fillOpacity: 0.15 }).addTo(map);
+            firstLoad = false;
+          } else {
+            marker.setLatLng([data.lat, data.lng]);
+            circle.setLatLng([data.lat, data.lng]);
+            map.panTo([data.lat, data.lng]);
+          }
+
+          const secondsAgo = Math.round((Date.now() - data.lastUpdate) / 1000);
+          statusText.textContent = secondsAgo < 60
+            ? 'Atualizado há ' + secondsAgo + ' segundos'
+            : 'Atualizado há ' + Math.round(secondsAgo / 60) + ' minutos';
+        } catch (e) {
+          statusText.textContent = 'Falha a atualizar — a tentar de novo...';
+        }
+      }
+
+      poll();
+      setInterval(poll, 10000);
+    }
+  </script>
+</body>
+</html>
