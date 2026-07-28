@@ -83,8 +83,13 @@ async function startServer() {
   // Origens permitidas: o site web (definido em ALLOWED_ORIGIN, para produção),
   // localhost em desenvolvimento, e os esquemas nativos que o Capacitor usa
   // para servir a app dentro do WebView do iOS/Android.
+  // Normalizamos (removemos espaços e barra final) porque é muito fácil colar
+  // a variável de ambiente com um espaço a mais ou uma barra no fim sem dar por
+  // isso — e isso sozinho é suficiente para bloquear a própria app de se
+  // conseguir contactar a si mesma.
+  const normalizeOrigin = (o: string | undefined): string | undefined => o?.trim().replace(/\/$/, '');
   const allowedOrigins = [
-    process.env.ALLOWED_ORIGIN, // ex: https://sosmais.pt — define isto em produção
+    normalizeOrigin(process.env.ALLOWED_ORIGIN), // ex: https://sosmais.pt — define isto em produção
     "http://localhost:3000",
     "http://localhost:5173",
     "capacitor://localhost", // iOS (Capacitor)
@@ -106,6 +111,11 @@ async function startServer() {
     }
   };
 
+  // Regista, uma vez no arranque, exatamente que origens estão configuradas — para
+  // confirmar em segundos (nos Logs) se uma variável de ambiente ficou com um valor
+  // inesperado, em vez de andarmos às cegas a testar hipóteses.
+  console.log('[CORS] Origens permitidas:', allowedOrigins);
+
   // Aplicado só a "/api" — nunca aos ficheiros estáticos da própria app (CSS, JS,
   // imagens). CORS existe para proteger a API contra pedidos de outras origens;
   // aplicá-lo a tudo bloqueava até os próprios ficheiros da app a carregarem-se a
@@ -114,10 +124,12 @@ async function startServer() {
     origin: (origin, callback) => {
       // Pedidos sem "Origin" (ex: apps nativas via fetch nativo, curl, health checks)
       // são permitidos — não há política de mesma-origem para os bloquear de qualquer forma.
-      if (!origin || allowedOrigins.includes(origin) || (isDevEnv && isLocalNetworkOrigin(origin))) {
+      // Normalizamos também a origem recebida (nunca confiar que vem sempre "limpa").
+      const normalizedIncoming = normalizeOrigin(origin);
+      if (!origin || allowedOrigins.includes(normalizedIncoming!) || (isDevEnv && isLocalNetworkOrigin(origin))) {
         callback(null, true);
       } else {
-        console.warn(`[CORS] Origem bloqueada: ${origin}`);
+        console.warn(`[CORS] Origem bloqueada: "${origin}" (normalizada: "${normalizedIncoming}"). Permitidas: ${JSON.stringify(allowedOrigins)}`);
         callback(new Error("Não permitido por CORS"));
       }
     },
@@ -138,7 +150,11 @@ async function startServer() {
     contentSecurityPolicy: isDev ? false : {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        // O login com Google (Firebase Auth) carrega o próprio script deles
+        // (apis.google.com) para o popup de autenticação — sem isto no CSP, o
+        // login falha sempre com "auth/internal-error", mesmo com tudo o resto
+        // configurado corretamente do lado do Firebase.
+        scriptSrc: ["'self'", "https://apis.google.com", "https://www.gstatic.com"],
         // 'unsafe-inline' aqui é necessário: bibliotecas de UI (react-hot-toast/goober)
         // injetam <style> dinamicamente; não há forma fácil de evitar sem reescrever essas libs.
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
@@ -148,6 +164,9 @@ async function startServer() {
           "https://*.tile.openstreetmap.org",
           "https://www.openstreetmap.org"
         ],
+        // Sons de UI (alertas, notificações) — sem isto explícito, o CSP cai para
+        // "default-src 'self'" e bloqueia o áudio vindo de fora do nosso domínio.
+        mediaSrc: ["'self'", "https://assets.mixkit.co", "https://cdn.freesound.org"],
         connectSrc: [
           "'self'",
           // Localização/IP (fallback chain do ipLocationService)

@@ -64,7 +64,16 @@ export const useAppInitialization = (activeTab: string) => {
 
       const commandsEnabled = localStorage.getItem('sos_mais_voice_commands') !== 'false';
       if (commandsEnabled) {
+        // Alguns motores de reconhecimento de voz do browser disparam o evento de
+        // deteção duas vezes seguidas para a mesma frase dita — este período de
+        // segurança (3s) evita mostrar o mesmo aviso duplicado, ou disparar o ecrã
+        // de emergência duas vezes por engano.
+        let lastTriggerAt = 0;
         speechService.start(() => {
+          const now = Date.now();
+          if (now - lastTriggerAt < 3000) return;
+          lastTriggerAt = now;
+
           toast.error('Comando de Voz: SOS Detectado!', {
             icon: '🎙️',
             duration: 4000,

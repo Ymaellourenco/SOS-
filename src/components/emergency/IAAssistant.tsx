@@ -97,8 +97,11 @@ const MessageItem = React.memo(({ message, onSelectGuide, onTabChange, onFindNea
             <button 
               onClick={() => {
                 if (message.suggestedGuide) {
+                  // O guia abre como um ecrã sobreposto (overlay) — não mudamos a aba de
+                  // fundo para "Guias". Se mudássemos, ao fechar o guia a pessoa acabava
+                  // na aba de Guias em vez de voltar à conversa com a IA, o que a
+                  // interrompe sem motivo a meio de uma emergência.
                   onSelectGuide?.(message.suggestedGuide);
-                  onTabChange?.('guides');
                   voiceService.speak(`Abrindo guia para ${message.suggestedGuide.title}`);
                 }
               }}
@@ -181,6 +184,19 @@ MessageItem.displayName = 'MessageItem';
 
 export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
   const [messages, setMessages] = useState<Message[]>([]);
+
+  // Evita mensagens duplicadas seguidas quando a pessoa toca no mesmo botão várias
+  // vezes seguidas (ex: "Enviar Alerta" sem sessão, microfone não suportado) — sem
+  // isto, cada toque empilhava a mesma frase outra vez, poluindo a conversa numa
+  // altura em que a pessoa pode já estar em stress.
+  const addAssistantMessageIfNew = (content: string, extra?: Partial<Message>) => {
+    setMessages(prev => {
+      if (prev.length > 0 && prev[prev.length - 1].content === content) {
+        return prev;
+      }
+      return [...prev, { role: 'assistant', content, ...extra }];
+    });
+  };
   const [useAdvancedAI, setUseAdvancedAI] = useState(false);
   const [findingDestination, setFindingDestination] = useState<DestinationType | null>(null);
 
@@ -325,7 +341,7 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
       if (!auth.currentUser) {
         logger.warn('[SOS] Sem sessão iniciada — alerta não enviado.');
         const warning = "⚠️ Não consegui enviar o alerta: não há sessão iniciada na app. Inicie sessão, ou ligue 112 diretamente.";
-        setMessages(prev => [...prev, { role: 'assistant', content: warning }]);
+        addAssistantMessageIfNew(warning);
         voiceService.speak("Não é possível enviar o alerta sem sessão iniciada. Ligue 112.");
         setSosStatus('idle');
         return;
@@ -487,7 +503,11 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
       const message = isIOS
         ? "Este navegador não suporta ditado por aqui — mas pode tocar no campo de texto e usar o microfone do próprio teclado do iPad para ditar."
         : "O seu navegador não suporta transcrição de voz para texto.";
-      setMessages(prev => [...prev, { role: 'assistant', content: `ℹ️ ${message}` }]);
+      setMessages(prev => {
+        const content = `ℹ️ ${message}`;
+        if (prev.length > 0 && prev[prev.length - 1].content === content) return prev;
+        return [...prev, { role: 'assistant', content }];
+      });
       voiceService.speak(message);
       return;
     }
