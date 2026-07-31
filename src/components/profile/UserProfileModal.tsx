@@ -68,6 +68,12 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
   useEffect(() => {
     const loadProfile = async (user: any) => {
       setCurrentUser(user);
+      // Se agora há uma sessão iniciada com sucesso, qualquer aviso de erro de login
+      // anterior deixou de fazer sentido — limpa-o, para não ficar "preso" no ecrã
+      // depois de um login que já resultou bem.
+      if (user) {
+        setLoginError(null);
+      }
       // 1. Load from local first
       const saved = localStorage.getItem('sos_mais_user_profile');
       if (saved) {
@@ -91,6 +97,10 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
     };
 
     if (isOpen) {
+      // Limpa qualquer aviso de erro de uma tentativa de login anterior sempre que o
+      // perfil é reaberto — evita mostrar um erro antigo já ultrapassado.
+      setLoginError(null);
+
       if ('fcm_token' in localStorage) {
         setFcmToken(localStorage.getItem('fcm_token'));
       }
