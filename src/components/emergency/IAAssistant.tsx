@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Send, Bot, User, Loader2, ShieldCheck, AlertCircle, BookOpen, ChevronRight, Mic, Sparkles, MapPin, Trash2 } from 'lucide-react';
 import { EMERGENCY_SYSTEM_PROMPT } from '../../services/geminiService';
 import ReactMarkdown from 'react-markdown';
-import { cn, openPrefilledSMS, getBestAvailableLocation } from '../../lib/utils';
+import { cn, openPrefilledSMS, getBestAvailableLocation, getRecentEmergencyContext } from '../../lib/utils';
 import { OFFLINE_GUIDES } from '../../constants';
 import { EmergencyGuide, UserProfileData } from '../../types';
 import { voiceService } from '../../lib/voiceService';
@@ -339,10 +339,44 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
     logger.log('[SOS] Botão "Enviar Alerta Agora" premido.');
     try {
       if (!auth.currentUser) {
-        logger.warn('[SOS] Sem sessão iniciada — alerta não enviado.');
-        const warning = "⚠️ Não consegui enviar o alerta: não há sessão iniciada na app. Inicie sessão, ou ligue 112 diretamente.";
-        addAssistantMessageIfNew(warning);
-        voiceService.speak("Não é possível enviar o alerta sem sessão iniciada. Ligue 112.");
+        // Sem sessão, não conseguimos usar o alerta do servidor (que notifica os
+        // contactos guardados na nuvem) — mas os contactos ficam também guardados
+        // localmente, e SMS não precisa de sessão nenhuma. Em vez de dizer "não é
+        // possível" e parar, usamos essa alternativa real.
+        logger.warn('[SOS] Sem sessão iniciada — a tentar alternativa local por SMS.');
+        try {
+          const savedContactsRaw = localStorage.getItem('emergency_contacts');
+          const savedContacts = savedContactsRaw ? JSON.parse(savedContactsRaw) : [];
+          const personalContact = savedContacts.find((c: any) => c.type !== 'service' && c.phone);
+
+          if (personalContact) {
+            const location = await getBestAvailableLocation();
+            const mapsLink = `https://www.google.com/maps?q=${location.lat},${location.lon}`;
+            const context = getRecentEmergencyContext();
+            const message = `🚨 EMERGÊNCIA — Preciso de ajuda.${context ? ` Situação: "${context}"` : ''} A minha localização: ${mapsLink}`;
+            openPrefilledSMS(personalContact.phone, message);
+
+            // Se houver mais contactos pessoais guardados, sugere avisá-los também —
+            // sem obrigar a escolher antes de agir: o primeiro já foi contactado logo,
+            // rápido, e só depois mencionamos a hipótese de avisar mais alguém.
+            const otherContacts = savedContacts.filter((c: any) => c.type !== 'service' && c.phone && c.name !== personalContact.name);
+            const moreContactsNote = otherContacts.length > 0
+              ? ` Também pode avisar rapidamente ${otherContacts.slice(0, 2).map((c: any) => c.name).join(' ou ')} na aba Contactos — cada contacto tem lá o seu próprio botão de SMS de emergência.`
+              : '';
+
+            addAssistantMessageIfNew(`✅ Sem sessão iniciada, mas preparei um SMS de emergência para ${personalContact.name} com a sua localização. Confirme o envio na app de mensagens.${moreContactsNote}`);
+            voiceService.speak(`Preparei uma mensagem de emergência para ${personalContact.name}. Confirme o envio.`);
+          } else {
+            const warning = "⚠️ Não consegui enviar o alerta: não há sessão iniciada, nem contactos pessoais guardados neste dispositivo. Ligue 112 diretamente, ou adicione um contacto na aba Contactos.";
+            addAssistantMessageIfNew(warning);
+            voiceService.speak("Não é possível enviar o alerta sem sessão nem contactos guardados. Ligue 112.");
+          }
+        } catch (fallbackError) {
+          logger.error('[SOS] Falha também na alternativa local:', fallbackError);
+          const warning = "⚠️ Não consegui enviar o alerta. Ligue 112 diretamente.";
+          addAssistantMessageIfNew(warning);
+          voiceService.speak("Não consegui enviar o alerta. Ligue 112.");
+        }
         setSosStatus('idle');
         return;
       }
@@ -809,9 +843,13 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
       setMessages(prev => [...prev, { role: 'assistant', content: text, suggestedGuide, suggestedDestinationType, isAdvanced: advancedUsed }]);
       voiceService.speak(text);
     } catch (error: any) {
-      logger.error('Erro ao contactar a IA:', error);
+      // O motivo técnico (limite de pedidos, chave inválida, etc.) fica só no registo
+      // para nós — nunca no ecrã. Numa emergência, ver "limite de tokens atingido" só
+      // assusta e faz perder confiança na app; o que importa mostrar é que ainda há
+      // ajuda disponível (os guias offline), não o motivo interno da falha.
       const reason = error?.message || 'motivo desconhecido';
-      const text = `⚠️ *Não consegui contactar a IA agora (${reason}).* Vou usar os guias offline da app entretanto.\n\n${getOfflineResponse(userMsg, profile, suggestedGuide)}`;
+      logger.error(`Erro ao contactar a IA (motivo interno: ${reason}):`, error);
+      const text = `Vou usar os guias de emergência da app para o ajudar agora.\n\n${getOfflineResponse(userMsg, profile, suggestedGuide)}`;
       setMessages(prev => [...prev, { role: 'assistant', content: text, suggestedGuide, suggestedDestinationType }]);
       voiceService.speak(getOfflineResponse(userMsg, profile, suggestedGuide));
     } finally {

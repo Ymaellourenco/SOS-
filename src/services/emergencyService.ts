@@ -25,6 +25,23 @@ function cacheKey(lat: number, lng: number, radiusKm: number): string {
 }
 
 export async function fetchNearbyEmergencyPOIs(lat: number, lng: number, radiusKm: number = 15): Promise<EmergencyPOI[]> {
+  // Antes de admitir "sem dados", tenta raios cada vez maiores — em zonas mais
+  // rurais, o hospital mais próximo pode estar a 40-50km, não só 15km. Nunca
+  // inventamos um resultado, mas procuramos mesmo a sério antes de desistir.
+  const radiiToTry = [...new Set([radiusKm, radiusKm * 2, radiusKm * 4, 60])].filter(r => r <= 60).sort((a, b) => a - b);
+
+  for (let i = 0; i < radiiToTry.length; i++) {
+    const results = await fetchNearbyEmergencyPOIsAtRadius(lat, lng, radiiToTry[i]);
+    const hasRealResults = results.length > 0 && !results.every(r => r.isEstimate);
+    if (hasRealResults || i === radiiToTry.length - 1) {
+      return results;
+    }
+    logger.log(`[EmergencyService] Nada confirmado a ${radiiToTry[i]}km — a tentar um raio maior antes de desistir.`);
+  }
+  return fetchNearbyEmergencyPOIsAtRadius(lat, lng, radiusKm);
+}
+
+async function fetchNearbyEmergencyPOIsAtRadius(lat: number, lng: number, radiusKm: number): Promise<EmergencyPOI[]> {
   const key = cacheKey(lat, lng, radiusKm);
   const cached = poiCache.get(key);
   if (cached && Date.now() - cached.timestamp < POI_CACHE_TTL) {

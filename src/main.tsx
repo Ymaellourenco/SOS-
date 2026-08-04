@@ -12,7 +12,7 @@ import './index.css';
 patchFetchForNativeApp();
 
 // eslint-disable-next-line no-console
-console.log('%c[SOS MAIS] BUILD MARKER 2026-07-28-CLEAR-STALE-LOGIN-ERROR — se não vês ESTA versão exata, a app/browser não está a correr o código mais recente.', 'background:#dc2626;color:#fff;font-weight:bold;padding:4px 8px;border-radius:4px;');
+console.log('%c[SOS MAIS] BUILD MARKER 2026-07-29-AI-FALLBACK-OPENROUTER — se não vês ESTA versão exata, a app/browser não está a correr o código mais recente.', 'background:#dc2626;color:#fff;font-weight:bold;padding:4px 8px;border-radius:4px;');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

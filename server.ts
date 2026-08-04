@@ -144,6 +144,14 @@ async function startServer() {
   const isDev = process.env.NODE_ENV !== "production";
 
   app.use(helmet({
+    // O Helmet, por defeito, define "Cross-Origin-Opener-Policy: same-origin" —
+    // isto parece inofensivo, mas quebra especificamente o login por popup do
+    // Google (Firebase Auth): o popup consegue completar o login corretamente,
+    // mas o browser impede-o de "avisar" a página principal que terminou, por
+    // causa desta política. O resultado é o erro "auth/popup-closed-by-user"
+    // mesmo com a pessoa a escolher a conta e a completar o login normalmente.
+    // "same-origin-allow-popups" mantém a proteção, mas permite este caso específico.
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
     // CSP estrita só faz sentido em produção: em desenvolvimento, o Vite injeta
     // um script inline e usa WebSocket para o hot-reload, e uma CSP rígida
     // bloqueia os dois, impedindo a app de sequer arrancar.
@@ -1501,7 +1509,7 @@ async function startServer() {
   app.get("/api/emergency-pois", async (req, res) => {
     const lat = parseFloat(req.query.lat as string);
     const lng = parseFloat(req.query.lng as string);
-    const radiusKm = Math.min(parseFloat(req.query.radius as string) || 15, 30);
+    const radiusKm = Math.min(parseFloat(req.query.radius as string) || 15, 60);
 
     if (isNaN(lat) || isNaN(lng)) {
       return res.status(400).json({ error: "lat e lng são obrigatórios." });
@@ -1850,12 +1858,67 @@ async function startServer() {
   });
 
   // Groq AI Chat Proxy (substitui o Gemini: gratuito, limites muito mais generosos)
+  // Tenta um modelo gratuito no OpenRouter, usado como reserva quando o Groq falha
+  // (limite de pedidos atingido, erro temporário, etc.) — para nunca deixar a pessoa
+  // sem IA nenhuma numa emergência só porque um dos dois serviços está sobrecarregado.
+  async function callOpenRouterFallback(openaiMessages: any[]): Promise<string | null> {
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    if (!openRouterKey) return null;
+
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openRouterKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          // Modelo gratuito do OpenRouter (sufixo ":free") — se este atingir o limite
+          // dele também, tenta o segundo da lista antes de desistir.
+          model: "meta-llama/llama-3.3-70b-instruct:free",
+          messages: openaiMessages,
+          temperature: 0.7,
+          max_tokens: 350
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (!response.ok) {
+        console.warn(`[Chat] Reserva OpenRouter (modelo 1) falhou: ${response.status}`);
+        // Segunda tentativa, com outro modelo gratuito diferente.
+        const retryResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${openRouterKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.0-flash-exp:free",
+            messages: openaiMessages,
+            temperature: 0.7,
+            max_tokens: 350
+          }),
+          signal: AbortSignal.timeout(15000)
+        });
+        if (!retryResponse.ok) {
+          console.warn(`[Chat] Reserva OpenRouter (modelo 2) também falhou: ${retryResponse.status}`);
+          return null;
+        }
+        const retryData = await retryResponse.json();
+        return retryData.choices?.[0]?.message?.content || null;
+      }
+
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || null;
+    } catch (error) {
+      console.warn("[Chat] Reserva OpenRouter falhou por completo:", error);
+      return null;
+    }
+  }
+
   app.post("/api/chat", async (req, res) => {
     try {
       const groqKey = process.env.GROQ_API_KEY;
-      if (!groqKey) {
-        return res.status(503).json({ error: "IA Central temporariamente indisponível (Chave não configurada)." });
-      }
       const { messages, systemInstruction } = req.body;
 
       // Converte o formato (estilo Gemini: role/parts) para o formato OpenAI-compatível usado pelo Groq
@@ -1867,39 +1930,55 @@ async function startServer() {
         }))
       ];
 
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${groqKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: openaiMessages,
-          temperature: 0.7,
-          max_tokens: 350
-        }),
-        signal: AbortSignal.timeout(15000)
-      });
+      if (groqKey) {
+        try {
+          const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${groqKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: "llama-3.3-70b-versatile",
+              messages: openaiMessages,
+              temperature: 0.7,
+              max_tokens: 350
+            }),
+            signal: AbortSignal.timeout(15000)
+          });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        if (response.status === 429) {
-          console.warn("[Chat] Groq Rate Limit reached.");
-          return res.status(429).json({ error: "Limite de solicitações atingido. Tente novamente em breve." });
+          if (response.ok) {
+            const data = await response.json();
+            const responseText = data.choices?.[0]?.message?.content || "Estou aqui consigo. Mantenha a calma.";
+            return res.json({ text: responseText });
+          }
+
+          if (response.status === 429) {
+            console.warn("[Chat] Groq atingiu o limite de pedidos — a tentar a reserva.");
+          } else {
+            const errText = await response.text();
+            console.error("[Chat] Groq falhou:", response.status, errText);
+          }
+        } catch (groqError) {
+          console.warn("[Chat] Groq indisponível — a tentar a reserva:", groqError);
         }
-        console.error("Groq Proxy Error:", response.status, errText);
-        // Inclui o motivo real (status + corpo da resposta do Groq) para facilitar o diagnóstico —
-        // isto não é informação sensível, é o erro que o próprio Groq devolveu.
-        return res.status(500).json({ error: `Falha na comunicação com a IA Central (Groq respondeu ${response.status}): ${errText.slice(0, 200)}` });
+      } else {
+        console.warn("[Chat] GROQ_API_KEY não configurada — a ir direto para a reserva.");
       }
 
-      const data = await response.json();
-      const responseText = data.choices?.[0]?.message?.content || "Estou aqui consigo. Mantenha a calma.";
-      res.json({ text: responseText });
+      // O Groq falhou (ou nem está configurado) — tenta a reserva antes de desistir.
+      const fallbackText = await callOpenRouterFallback(openaiMessages);
+      if (fallbackText) {
+        return res.json({ text: fallbackText });
+      }
+
+      // As duas IAs falharam — o cliente já sabe usar os guias offline neste caso,
+      // por isso devolvemos um erro claro só para fins de registo, não para mostrar
+      // texto técnico à pessoa.
+      return res.status(503).json({ error: "IA Central e reserva indisponíveis." });
     } catch (error: any) {
-      console.error("Groq Proxy Error:", error);
-      res.status(500).json({ error: "Falha na comunicação com a IA Central. Por favor, tente novamente." });
+      console.error("Chat Proxy Error:", error);
+      res.status(500).json({ error: "Falha na comunicação com a IA." });
     }
   });
 
