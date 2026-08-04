@@ -145,7 +145,17 @@ export const PremiumHero = memo(({ onTriggerAI, onSelectGuide, onSeeAllGuides }:
             }
           }
         } catch (err) {}
-      }, null, { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 });
+      }, (error) => {
+        // Antes, os erros de GPS eram completamente ignorados (segundo argumento
+        // a "null") — nunca sabíamos SE estava a falhar, nem porquê. Agora fica
+        // registado, para conseguirmos ver a causa exata em vez de adivinhar.
+        const reasons: Record<number, string> = {
+          1: 'PERMISSION_DENIED (permissão negada, apesar de aparecer concedida nas Definições)',
+          2: 'POSITION_UNAVAILABLE (o sistema não conseguiu calcular uma posição)',
+          3: 'TIMEOUT (demorou mais do que o tempo limite definido)'
+        };
+        logger.error(`[PremiumHero] GPS falhou: ${reasons[error.code] || error.message} (código ${error.code})`);
+      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
     }
 
     return () => {

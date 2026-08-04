@@ -39,4 +39,13 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Sem estas duas, o Android nunca mostra o pedido de autorização de
+         localização — a app cai sempre para a aproximação por IP, mesmo com
+         GPS real disponível no telemóvel. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Necessário para o comando de voz (deteção de "SOS"/"emergência" por fala). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Necessário a partir do Android 13 para poder mostrar notificações (alertas). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

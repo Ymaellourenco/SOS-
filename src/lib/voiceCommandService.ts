@@ -20,7 +20,7 @@ export class SpeechService {
       this.recognition.onstart = () => {
         this.isActuallyStarted = true;
         this.isListening = true;
-        logger.log('Voice recognition active...');
+        logger.log('[Voz] Reconhecimento ativo — a ouvir...');
       };
 
       this.recognition.onresult = (event: any) => {
@@ -29,7 +29,7 @@ export class SpeechService {
           transcript += event.results[i][0].transcript.toLowerCase();
         }
 
-        logger.log('Voice Stream:', transcript);
+        logger.log('[Voz] Ouvido:', transcript);
         
         // Comprehensive Portuguese emergency keyword detection.
         // Usamos limites de palavra (\b) em vez de .includes() — "sos" sozinho como substring
@@ -84,7 +84,7 @@ export class SpeechService {
 
       this.recognition.onerror = (event: any) => {
         if (event.error === 'aborted') return; // Expected when stopping manually
-        logger.warn('Speech recognition error:', event.error);
+        logger.warn('[Voz] Erro no reconhecimento:', event.error);
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
           this.isListening = false;
         }

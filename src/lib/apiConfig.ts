@@ -17,10 +17,18 @@
  *   fixo que o Android reserva para significar "o computador que está a
  *   correr o emulador". Confirmado a funcionar diretamente (testado no Chrome
  *   dentro do emulador). NUNCA é o IP normal da tua rede Wi-Fi.
- * - No TELEMÓVEL REAL, ligado à mesma Wi-Fi do computador: usa o IP normal
- *   da tua rede (ex: 192.168.1.69) — o mesmo que já usaste para testar pelo
- *   browser.
- * Muda a linha USING_EMULATOR consoante o que estiveres a testar agora.
+ * - No TELEMÓVEL REAL, por Wi-Fi/hotspot: usa o IP normal dessa rede — mas
+ *   CUIDADO: confirmámos que tanto redes Wi-Fi públicas como o hotspot
+ *   pessoal de iPhone bloqueiam a comunicação entre dispositivos ligados à
+ *   mesma rede ("isolamento de clientes"), mesmo com o IP certo — isto dá
+ *   sempre "ERR_CONNECTION_TIMED_OUT", nunca um erro mais claro.
+ * - No TELEMÓVEL REAL, por CABO USB (recomendado — evita todo o problema
+ *   acima): corre "adb reverse tcp:3000 tcp:3000" no cmd, com o telemóvel
+ *   ligado por USB. Isto faz o telemóvel encaminhar pedidos ao seu próprio
+ *   "localhost:3000" diretamente para o "localhost:3000" do computador, sem
+ *   depender de rede nenhuma. Usa USING_USB_REVERSE = true para isto.
+ * Muda as linhas USING_EMULATOR / USING_USB_REVERSE consoante o que
+ * estiveres a testar agora.
  *
  * IMPORTANTE — nunca uses "import.meta.env.PROD" para decidir isto: o
  * "npm run build" usado para gerar a app nativa é SEMPRE uma build de
@@ -34,9 +42,14 @@
  * preenche PRODUCTION_SERVER_URL com o domínio real do servidor.
  */
 const USING_EMULATOR = false; // <- muda para true se voltares a testar no emulador
+const USING_USB_REVERSE = true; // <- true = telemóvel real por cabo USB + "adb reverse" (recomendado)
 const IS_DEPLOYED_TO_PRODUCTION = false; // <- muda para true só quando publicares a sério
-const DEV_LAN_IP = "10.6.41.120"; // <- o IP da tua rede Wi-Fi, para telemóvel real (atualiza se mudar)
-const DEV_SERVER_URL = USING_EMULATOR ? "http://10.0.2.2:3000" : `http://${DEV_LAN_IP}:3000`;
+const DEV_LAN_IP = "172.20.10.3"; // <- só usado se USING_USB_REVERSE for false (Wi-Fi/hotspot)
+const DEV_SERVER_URL = USING_EMULATOR
+  ? "http://10.0.2.2:3000"
+  : USING_USB_REVERSE
+    ? "http://localhost:3000"
+    : `http://${DEV_LAN_IP}:3000`;
 const PRODUCTION_SERVER_URL = "https://sos-xr41.onrender.com"; // servidor real, publicado no Render
 
 function isNativePlatform(): boolean {
