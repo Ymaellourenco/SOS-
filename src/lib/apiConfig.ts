@@ -33,9 +33,9 @@
  * QUANDO PUBLICARES A SÉRIO: muda IS_DEPLOYED_TO_PRODUCTION para true, e
  * preenche PRODUCTION_SERVER_URL com o domínio real do servidor.
  */
-const USING_EMULATOR = true; // <- muda para false quando testares num telemóvel Android real
+const USING_EMULATOR = false; // <- muda para true se voltares a testar no emulador
 const IS_DEPLOYED_TO_PRODUCTION = false; // <- muda para true só quando publicares a sério
-const DEV_LAN_IP = "192.168.1.69"; // <- o IP da tua rede Wi-Fi, para telemóvel real (atualiza se mudar)
+const DEV_LAN_IP = "10.6.41.120"; // <- o IP da tua rede Wi-Fi, para telemóvel real (atualiza se mudar)
 const DEV_SERVER_URL = USING_EMULATOR ? "http://10.0.2.2:3000" : `http://${DEV_LAN_IP}:3000`;
 const PRODUCTION_SERVER_URL = "https://sos-xr41.onrender.com"; // servidor real, publicado no Render
 
