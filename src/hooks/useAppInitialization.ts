@@ -50,17 +50,30 @@ export const useAppInitialization = (activeTab: string) => {
     }
 
     // 2. Deferred Post-Boot Tasks
-    const handleIdleTasks = () => {
-      requestNotificationPermission().then(granted => {
-        if (granted) {
-          setupMessageListener();
-          startProximityBeacon();
-        }
-      });
+    const handleIdleTasks = async () => {
+      // O WebView do Android só consegue processar UM pedido de permissão de cada
+      // vez — pedir notificações e microfone quase ao mesmo tempo (ou perto do
+      // pedido de localização) fazia a app fechar-se sozinha, com o erro nativo
+      // "Either grant() or deny() has been already called". Por isso encadeamos
+      // os pedidos, um a seguir ao outro, nunca em paralelo.
+      let notificationsGranted = false;
+      try {
+        notificationsGranted = await requestNotificationPermission();
+      } catch (e) {
+        // Falha a pedir notificações não deve impedir o resto de arrancar.
+      }
+      if (notificationsGranted) {
+        setupMessageListener();
+        startProximityBeacon();
+      }
 
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
       }
+
+      // Pequena pausa antes do próximo pedido de permissão (microfone), para dar
+      // tempo ao Android de terminar de processar o anterior por completo.
+      await new Promise(r => setTimeout(r, 1500));
 
       const commandsEnabled = localStorage.getItem('sos_mais_voice_commands') !== 'false';
       if (commandsEnabled) {
@@ -84,8 +97,16 @@ export const useAppInitialization = (activeTab: string) => {
       }
     };
 
+    // requestIdleCallback pode disparar quase de imediato se o browser já estiver
+    // "parado" — isso podia coincidir exatamente com o pedido de localização
+    // (que dispara logo acima, sem atraso nenhum), causando a mesma colisão de
+    // permissões que estamos a tentar evitar. Por isso garantimos sempre um
+    // atraso mínimo (3s), mesmo quando requestIdleCallback está disponível.
+    const MIN_IDLE_DELAY_MS = 3000;
     if ('requestIdleCallback' in window) {
-      (window as any).requestIdleCallback(handleIdleTasks, { timeout: 10000 });
+      setTimeout(() => {
+        (window as any).requestIdleCallback(handleIdleTasks, { timeout: 10000 });
+      }, MIN_IDLE_DELAY_MS);
     } else {
       setTimeout(handleIdleTasks, 6000);
     }
