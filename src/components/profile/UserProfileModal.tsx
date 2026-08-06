@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Save, User as UserIcon, Droplets, Pill, AlertTriangle, FileText, Calendar, Weight, Ruler, LogIn, LogOut, Trash2, Volume2, Play, Mic } from 'lucide-react';
+import { X, Save, User as UserIcon, Droplets, Pill, AlertTriangle, FileText, Calendar, Weight, Ruler, LogIn, LogOut, Trash2, Volume2, Mic } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { UserProfileData } from '../../types';
 import { db, auth } from '../../lib/firebase';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut, deleteUser } from 'firebase/auth';
-import { playNotificationPreview, requestNotificationPermission, sendAlertNotification, getFCMToken } from '../../lib/notifications';
+import { requestNotificationPermission, sendAlertNotification, getFCMToken } from '../../lib/notifications';
 import { voiceService } from '../../lib/voiceService';
 import { speechService } from '../../lib/voiceCommandService';
 import { toast } from 'react-hot-toast';
@@ -46,6 +46,10 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
   useEffect(() => {
     setVoiceEnabled(voiceService.isEnabled());
     setVoiceCommandsEnabled(localStorage.getItem('sos_mais_voice_commands') !== 'false');
+    // Som de notificação: atribuído automaticamente, sem escolha manual do utilizador.
+    if (!profile.notificationSound) {
+      handleFieldChange('notificationSound', NOTIFICATION_SOUNDS[0].url);
+    }
   }, []);
 
   const toggleVoice = () => {
@@ -104,6 +108,15 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
       if ('fcm_token' in localStorage) {
         setFcmToken(localStorage.getItem('fcm_token'));
       }
+
+      // Diagnóstico de notificações: pede a permissão e obtém o token automaticamente,
+      // sem precisar de um botão manual ("Sincronizar Antena").
+      requestNotificationPermission().then(async (granted) => {
+        if (granted) {
+          const token = await getFCMToken();
+          setFcmToken(token);
+        }
+      }).catch((e) => logger.warn('Falha ao sincronizar notificações automaticamente', e));
       
       const unsubscribe = auth.onAuthStateChanged((user) => {
         loadProfile(user);
@@ -580,47 +593,6 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                   </div>
                 </div>
 
-                <div className="group">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Som de Notificação (Crítico)</label>
-                  <div className="bg-slate-50 border border-slate-100 rounded-[32px] p-2 space-y-1">
-                    {NOTIFICATION_SOUNDS.map((sound) => (
-                      <div 
-                        key={sound.id}
-                        className={cn(
-                          "flex items-center justify-between p-3 rounded-2xl transition-all cursor-pointer",
-                          profile.notificationSound === sound.url 
-                            ? "bg-white shadow-sm border border-black/5" 
-                            : "hover:bg-black/5 border border-transparent"
-                        )}
-                        onClick={() => handleFieldChange('notificationSound', sound.url)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={cn(
-                            "w-2 h-2 rounded-full",
-                            profile.notificationSound === sound.url ? "bg-red-500" : "bg-slate-200"
-                          )} />
-                          <span className={cn(
-                            "text-xs font-bold uppercase tracking-tight",
-                            profile.notificationSound === sound.url ? "text-slate-900" : "text-slate-500"
-                          )}>
-                            {sound.name}
-                          </span>
-                        </div>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            playNotificationPreview(sound.url);
-                            voiceService.speak(`Ouvir ${sound.name}`);
-                          }}
-                          className="p-2 bg-white rounded-xl shadow-sm border border-black/5 hover:scale-110 active:scale-95 transition-all group/play"
-                        >
-                          <Play className="w-3 h-3 text-slate-400 group-hover/play:text-red-500" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Diagnóstico de Sistema</label>
                   <div className="bg-slate-50 border border-slate-100 rounded-[32px] p-4 space-y-4">
@@ -634,21 +606,7 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                        </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <button 
-                         onClick={async () => {
-                           const granted = await requestNotificationPermission();
-                           if (granted) {
-                             const token = await getFCMToken();
-                             setFcmToken(token);
-                             handleSave();
-                             toast.success('Antena Calibrada');
-                           }
-                         }}
-                         className="py-3 bg-white border border-black/5 rounded-2xl text-[8px] font-black uppercase tracking-widest text-[#1d1d1f] shadow-sm active:scale-95 transition-transform"
-                      >
-                        Sincronizar Antena
-                      </button>
+                    <div className="grid grid-cols-1 gap-3">
                       <button 
                          onClick={async () => {
                            // Try local first
