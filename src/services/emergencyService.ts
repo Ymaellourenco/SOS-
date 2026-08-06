@@ -152,7 +152,7 @@ const REAL_PORTUGAL_HOSPITALS: { name: string; lat: number; lng: number }[] = [
   { name: "Centro Hospitalar Universitário de Santo António (Porto)", lat: 41.1536, lng: -8.6103 },
   { name: "Centro Hospitalar de Trás-os-Montes e Alto Douro, E.P.E. (Vila Real)", lat: 41.3033, lng: -7.7438 },
   { name: "Unidade Local de Saúde do Nordeste, E.P.E. (Bragança)", lat: 41.8067, lng: -6.7567 },
-  { name: "Centro Hospitalar Tondela-Viseu, E.P.E. — Hospital de São Teotónio (Viseu)", lat: 40.6566, lng: -7.9219 },
+  { name: "Centro Hospitalar Tondela-Viseu, E.P.E. — Hospital de São Teotónio (Viseu)", lat: 40.65033, lng: -7.90636 },
   { name: "Unidade Local de Saúde da Guarda, E.P.E.", lat: 40.5364, lng: -7.2683 },
   { name: "Centro Hospitalar de Baixo Vouga, E.P.E. (Aveiro)", lat: 40.6413, lng: -8.6455 },
   { name: "Centro Hospitalar e Universitário de Coimbra, E.P.E.", lat: 40.1998, lng: -8.4194 },
