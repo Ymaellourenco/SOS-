@@ -6,7 +6,7 @@ import { UserProfileData } from '../../types';
 import { db, auth } from '../../lib/firebase';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut, deleteUser } from 'firebase/auth';
-import { requestNotificationPermission, sendAlertNotification, getFCMToken } from '../../lib/notifications';
+import { requestNotificationPermission, getFCMToken } from '../../lib/notifications';
 import { voiceService } from '../../lib/voiceService';
 import { speechService } from '../../lib/voiceCommandService';
 import { toast } from 'react-hot-toast';
@@ -596,37 +596,6 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Diagnóstico de Sistema</label>
                   <div className="bg-slate-50 border border-slate-100 rounded-[32px] p-4 space-y-4">
-                    <div className="grid grid-cols-1 gap-3">
-                      <button 
-                         onClick={async () => {
-                           // Try local first
-                           sendAlertNotification('TESTE SOS', 'O sistema está a operar na frequência correta.', 'medium');
-                           
-                           // If token exists, try server push
-                           if (fcmToken) {
-                             try {
-                               await fetch('/api/notifications/send', {
-                                 method: 'POST',
-                                 headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({
-                                   token: fcmToken,
-                                   title: '📡 TESTE DE TRANSMISSÃO',
-                                   body: 'Sinal de rádio simulado via Nuvem com sucesso.'
-                                 })
-                               });
-                               toast.success('Sinal Enviado');
-                             } catch (e) {
-                               logger.error('Server push failed', e);
-                               toast.error('Erro de Sinal');
-                             }
-                           }
-                         }}
-                         className="py-3 bg-red-600 text-white rounded-2xl text-[8px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95 transition-transform"
-                      >
-                        Testar Rádio
-                      </button>
-                    </div>
-
                     {fcmToken && (
                       <div className="p-3 bg-slate-100 rounded-xl overflow-hidden">
                         <span className="text-[7px] font-black uppercase text-slate-400 block mb-1">Token de Dispositivo (Diagnóstico):</span>
