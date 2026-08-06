@@ -596,16 +596,6 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Diagnóstico de Sistema</label>
                   <div className="bg-slate-50 border border-slate-100 rounded-[32px] p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                       <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Estado de Notificações</span>
-                       <span className={cn(
-                         "px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest",
-                         typeof Notification !== 'undefined' && Notification.permission === 'granted' ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                       )}>
-                         {typeof Notification !== 'undefined' ? (Notification.permission === 'granted' ? 'Ativo (Granted)' : 'Inativo (Denied/Default)') : 'Indisponível'}
-                       </span>
-                    </div>
-
                     <div className="grid grid-cols-1 gap-3">
                       <button 
                          onClick={async () => {
