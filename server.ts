@@ -1320,13 +1320,20 @@ async function startServer() {
     // healthcare=clinic (ex: "Clínica de Estética X"), sem a etiqueta "shop" que os
     // excluiria pela regra abaixo. Nunca podem aparecer como centro de saúde real —
     // já aconteceu indicarem um cabeleireiro em vez de um hospital numa emergência.
+    // Inclui termos em inglês porque alguns estabelecimentos em Portugal usam nomes
+    // comerciais em inglês (ex: "Hair and Grooming Parlour"), que escapavam ao filtro
+    // anterior por só ter palavras em português.
     if (
       beauty || amenity === 'hairdresser' ||
       name.includes('cabeleireir') || name.includes('barbearia') || name.includes('barbeiro') ||
       name.includes('salão de beleza') || name.includes('salao de beleza') ||
       name.includes('estética') || name.includes('estetica') ||
       name.includes('manicure') || name.includes('pedicure') || name.includes('unhas') ||
-      name.includes('spa') || name.includes('nail')
+      name.includes('spa') || name.includes('nail') ||
+      name.includes('hair') || name.includes('grooming') || name.includes('parlour') ||
+      name.includes('parlor') || name.includes('salon') || name.includes('beauty') ||
+      name.includes('barber') || name.includes('waxing') || name.includes('lash') ||
+      name.includes('brow') || name.includes('cosmetic') || name.includes('esthetic')
     ) {
       return null;
     }
