@@ -93,6 +93,48 @@ async function fetchNearbyEmergencyPOIsAtRadius(lat: number, lng: number, radius
 }
 
 /**
+ * Coordenadas aproximadas do centro de cada capital de distrito (mais Madeira e Açores) —
+ * reutilizadas como base para localizar hospitais, esquadras, bombeiros e câmaras reais
+ * mais próximos, quando a pesquisa em tempo real falha.
+ */
+const DISTRICT_CAPITALS: { name: string; lat: number; lng: number }[] = [
+  { name: "Viana do Castelo", lat: 41.6947, lng: -8.8322 },
+  { name: "Braga", lat: 41.5623, lng: -8.4315 },
+  { name: "Porto", lat: 41.1579, lng: -8.6291 },
+  { name: "Vila Real", lat: 41.3033, lng: -7.7438 },
+  { name: "Bragança", lat: 41.8067, lng: -6.7567 },
+  { name: "Viseu", lat: 40.6566, lng: -7.9219 },
+  { name: "Guarda", lat: 40.5364, lng: -7.2683 },
+  { name: "Aveiro", lat: 40.6413, lng: -8.6455 },
+  { name: "Coimbra", lat: 40.2033, lng: -8.4103 },
+  { name: "Leiria", lat: 39.7436, lng: -8.8071 },
+  { name: "Castelo Branco", lat: 39.8222, lng: -7.4931 },
+  { name: "Santarém", lat: 39.2369, lng: -8.6857 },
+  { name: "Lisboa", lat: 38.7223, lng: -9.1393 },
+  { name: "Setúbal", lat: 38.5281, lng: -8.8929 },
+  { name: "Portalegre", lat: 39.2967, lng: -7.4306 },
+  { name: "Évora", lat: 38.5711, lng: -7.9106 },
+  { name: "Beja", lat: 38.0153, lng: -7.8650 },
+  { name: "Faro", lat: 37.0193, lng: -7.9304 },
+  { name: "Funchal (Madeira)", lat: 32.6669, lng: -16.9241 },
+  { name: "Ponta Delgada (Açores)", lat: 37.7412, lng: -25.6756 }
+];
+
+/** Encontra a capital de distrito mais próxima de uma coordenada, por distância direta. */
+function findNearestDistrictCapital(lat: number, lng: number): { name: string; lat: number; lng: number } {
+  let nearest = DISTRICT_CAPITALS[0];
+  let nearestDist = calculateDistance(lat, lng, nearest.lat, nearest.lng);
+  for (const c of DISTRICT_CAPITALS.slice(1)) {
+    const d = calculateDistance(lat, lng, c.lat, c.lng);
+    if (d < nearestDist) {
+      nearest = c;
+      nearestDist = d;
+    }
+  }
+  return nearest;
+}
+
+/**
  * Lista curada de hospitais públicos (SNS) reais em Portugal — um por distrito, mais
  * Madeira e Açores. Nomes oficiais confirmados na lista pública do Infarmed
  * ("Lista de Estabelecimentos Hospitalares Públicos e Privados"). Usada como último
@@ -124,24 +166,52 @@ const REAL_PORTUGAL_HOSPITALS: { name: string; lat: number; lng: number }[] = [
   { name: "Unidade Local de Saúde do Baixo Alentejo, E.P.E. (Beja)", lat: 38.0153, lng: -7.8650 },
   { name: "Centro Hospitalar e Universitário do Algarve, E.P.E. (Faro)", lat: 37.0367, lng: -7.9308 },
   { name: "Hospital Dr. Nélio Mendonça (Funchal, Madeira)", lat: 32.6483, lng: -16.9153 },
-  { name: "Hospital do Divino Espírito Santo (Ponta Delgada, Açores)", lat: 37.7412, lng: -25.6756 }
+  { name: "Hospital do Divino Espírito Santo (Ponta Delgada, Açores)", lat: 37.7412, lng: -25.6756 },
+  // Concelhos grandes que NÃO são capital de distrito, mas têm hospital público
+  // próprio — sem isto, cairiam incorretamente na capital de distrito mais próxima,
+  // por vezes bem mais longe do que o hospital real da própria cidade.
+  { name: "Centro Hospitalar de Vila Nova de Gaia/Espinho, E.P.E.", lat: 41.1095, lng: -8.6100 },
+  { name: "Hospital de Sintra (Algueirão-Mem Martins)", lat: 38.8367, lng: -9.3419 },
+  { name: "Hospital Garcia de Orta, E.P.E. (Almada)", lat: 38.6699, lng: -9.1697 },
+  { name: "Hospital Prof. Doutor Fernando Fonseca, E.P.E. (Amadora)", lat: 38.7561, lng: -9.2313 },
+  { name: "Unidade Local de Saúde do Alto Ave, E.P.E. — Hospital de Guimarães", lat: 41.4523, lng: -8.2934 },
+  { name: "Unidade Local de Saúde de Matosinhos, E.P.E. — Hospital Pedro Hispano", lat: 41.1859, lng: -8.6773 },
+  { name: "Hospital Beatriz Ângelo (Loures)", lat: 38.8305, lng: -9.1685 },
+  { name: "Centro Hospitalar Barreiro Montijo, E.P.E.", lat: 38.6667, lng: -9.0667 },
+  { name: "Centro Hospitalar Póvoa de Varzim/Vila do Conde, E.P.E.", lat: 41.3833, lng: -8.7667 },
+  { name: "Centro Hospitalar do Oeste — Hospital de Torres Vedras", lat: 39.0908, lng: -9.2601 },
+  { name: "Unidade Local de Saúde da Cova da Beira — Hospital Pêro da Covilhã", lat: 40.2663, lng: -7.4923 },
+  { name: "Centro Hospitalar Universitário do Algarve — Unidade Hospitalar de Portimão", lat: 37.1500, lng: -8.5578 },
+  { name: "Hospital Distrital de Chaves", lat: 41.7398, lng: -7.4707 },
+  { name: "Hospital de Santa Luzia de Elvas", lat: 38.8807, lng: -7.1622 },
+  { name: "Unidade Local de Saúde do Estuário do Tejo — Hospital de Vila Franca de Xira", lat: 38.9364, lng: -8.9944 },
+  { name: "Centro Hospitalar de Cascais — Hospital Condes de Castro Guimarães", lat: 38.6970, lng: -9.4210 },
+  { name: "Centro Hospitalar do Oeste — Unidade das Caldas da Rainha", lat: 39.4058, lng: -9.1364 },
+  { name: "Hospital de S. Pedro Gonçalves Telmo (Peniche)", lat: 39.3558, lng: -9.3811 },
+  { name: "Centro Hospitalar do Médio Tejo — Unidade de Abrantes", lat: 39.4631, lng: -8.1978 },
+  { name: "Centro Hospitalar de Trás-os-Montes e Alto Douro — Hospital Distrital de Lamego", lat: 41.0975, lng: -7.8123 },
+  { name: "Centro Hospitalar de Entre o Douro e Vouga — Hospital São Sebastião (Santa Maria da Feira)", lat: 40.9264, lng: -8.5476 }
 ];
 
 /**
- * Encontra o hospital real mais próximo desta lista curada, por distância direta.
- * Usado só quando a pesquisa em tempo real falhou — nunca substitui a pesquisa real
- * quando esta funciona, porque a lista tem só ~20 hospitais principais (não todos).
+ * Encontra o item real mais próximo de uma lista curada (hospital, esquadra, bombeiros...),
+ * por distância direta. Usado só quando a pesquisa em tempo real falhou.
  */
-function findNearestRealHospital(lat: number, lng: number): EmergencyPOI {
-  let nearest = REAL_PORTUGAL_HOSPITALS[0];
+function findNearestReal(list: { name: string; lat: number; lng: number }[], lat: number, lng: number): { name: string; lat: number; lng: number } {
+  let nearest = list[0];
   let nearestDist = calculateDistance(lat, lng, nearest.lat, nearest.lng);
-  for (const h of REAL_PORTUGAL_HOSPITALS.slice(1)) {
-    const d = calculateDistance(lat, lng, h.lat, h.lng);
+  for (const item of list.slice(1)) {
+    const d = calculateDistance(lat, lng, item.lat, item.lng);
     if (d < nearestDist) {
-      nearest = h;
+      nearest = item;
       nearestDist = d;
     }
   }
+  return nearest;
+}
+
+function findNearestRealHospital(lat: number, lng: number): EmergencyPOI {
+  const nearest = findNearestReal(REAL_PORTUGAL_HOSPITALS, lat, lng);
   return {
     id: "real-fallback-hospital",
     name: nearest.name,
@@ -155,52 +225,85 @@ function findNearestRealHospital(lat: number, lng: number): EmergencyPOI {
   };
 }
 
-function getOfflineFallbackPOIs(lat: number, lng: number): EmergencyPOI[] {
-  logger.warn(`[EmergencyService] Sem dados reais disponíveis para [${lat}, ${lng}] — a usar o hospital público real mais próximo da lista curada, e estimativas não confirmadas para os restantes tipos.`);
+/**
+ * Esquadra/comando policial, quartel de bombeiros e câmara municipal reais mais próximos,
+ * usando a capital de distrito mais próxima como referência (PSP tem sempre comando distrital
+ * na capital, quase todas as capitais de distrito têm corpo de bombeiros e câmara municipal
+ * própria). Menos preciso do que uma morada exata, mas continua a ser um local real que
+ * existe — nunca um ponto inventado deslocado ao calhas.
+ */
+function findNearestRealPolice(lat: number, lng: number): EmergencyPOI {
+  const capital = findNearestDistrictCapital(lat, lng);
+  return {
+    id: "real-fallback-police",
+    name: `PSP — Comando Distrital de ${capital.name}`,
+    type: "police",
+    location: { lat: capital.lat, lng: capital.lng },
+    address: "Localização aproximada — a pesquisa em tempo real falhou, confirme ligando 112.",
+    isEstimate: false
+  };
+}
 
-  // IMPORTANTE: estas posições (exceto o hospital, ver acima) são apenas uma direção
-  // aproximada relativa à localização do utilizador, geradas localmente — NÃO são locais
-  // reais verificados. Os nomes deixam isso claro de propósito, para nunca dar a entender
-  // que é um resultado confirmado.
+function findNearestRealFire(lat: number, lng: number): EmergencyPOI {
+  const capital = findNearestDistrictCapital(lat, lng);
+  return {
+    id: "real-fallback-fire",
+    name: `Corpo de Bombeiros de ${capital.name}`,
+    type: "fire",
+    location: { lat: capital.lat, lng: capital.lng },
+    address: "Localização aproximada — a pesquisa em tempo real falhou, confirme ligando 112.",
+    isEstimate: false
+  };
+}
+
+function findNearestRealMunicipality(lat: number, lng: number): EmergencyPOI {
+  const capital = findNearestDistrictCapital(lat, lng);
+  return {
+    id: "real-fallback-municipality",
+    name: `Câmara Municipal de ${capital.name}`,
+    type: "municipality",
+    location: { lat: capital.lat, lng: capital.lng },
+    address: "Localização aproximada — pode não ser o concelho exato do utilizador, confirme ligando 112 ou pesquisando a câmara local.",
+    isEstimate: false
+  };
+}
+
+/**
+ * Centro de saúde real mais próximo, usando a capital de distrito mais próxima como
+ * referência. Ao contrário dos hospitais (nomes próprios únicos, verificados um a um),
+ * todo o concelho sede de distrito tem sempre um "Centro de Saúde de [cidade]" — este
+ * padrão de nome é seguro de generalizar sem precisar de confirmar caso a caso.
+ */
+function findNearestRealHealthCenter(lat: number, lng: number): EmergencyPOI {
+  const capital = findNearestDistrictCapital(lat, lng);
+  return {
+    id: "real-fallback-health-center",
+    name: `Centro de Saúde de ${capital.name}`,
+    type: "health_center",
+    location: { lat: capital.lat, lng: capital.lng },
+    address: "Localização aproximada — pode não ser o centro de saúde do seu concelho, confirme ligando SNS 24 (808 24 24 24) ou 112.",
+    isEstimate: false
+  };
+}
+
+function getOfflineFallbackPOIs(lat: number, lng: number): EmergencyPOI[] {
+  logger.warn(`[EmergencyService] Sem dados reais disponíveis para [${lat}, ${lng}] — a usar hospital, esquadra, bombeiros, câmara e centro de saúde reais mais próximos da lista curada, e estimativas não confirmadas para os restantes tipos.`);
+
+  // IMPORTANTE: as entradas de posto de saúde/social abaixo continuam a ser apenas uma
+  // direção aproximada relativa à localização do utilizador, geradas localmente — NÃO
+  // são locais reais verificados. Os nomes deixam isso claro de propósito, para nunca
+  // dar a entender que é um resultado confirmado.
   const fallbackPOIs: EmergencyPOI[] = [
     findNearestRealHospital(lat, lng),
-    {
-      id: "fallback-health-center-1",
-      name: "Centro de Saúde (estimativa não confirmada)",
-      type: "health_center",
-      location: { lat: lat - 0.0031, lng: lng + 0.0045 },
-      address: "Sem dados confirmados — ligue 112 ou SNS 24 para confirmar o local exato",
-      isEstimate: true
-    },
+    findNearestRealPolice(lat, lng),
+    findNearestRealFire(lat, lng),
+    findNearestRealMunicipality(lat, lng),
+    findNearestRealHealthCenter(lat, lng),
     {
       id: "fallback-health-post",
       name: "Posto de Saúde (estimativa não confirmada)",
       type: "health_post",
       location: { lat: lat + 0.0068, lng: lng - 0.0072 },
-      address: "Sem dados confirmados",
-      isEstimate: true
-    },
-    {
-      id: "fallback-police",
-      name: "Esquadra/Posto policial (estimativa não confirmada)",
-      type: "police",
-      location: { lat: lat - 0.0054, lng: lng - 0.0049 },
-      address: "Sem dados confirmados — ligue 112 para confirmar o local exato",
-      isEstimate: true
-    },
-    {
-      id: "fallback-fire-1",
-      name: "Bombeiros (estimativa não confirmada)",
-      type: "fire",
-      location: { lat: lat + 0.0019, lng: lng + 0.0084 },
-      address: "Sem dados confirmados — ligue 112 para confirmar o local exato",
-      isEstimate: true
-    },
-    {
-      id: "fallback-municipality",
-      name: "Câmara Municipal / Proteção Civil (estimativa não confirmada)",
-      type: "municipality",
-      location: { lat: lat + 0.0006, lng: lng + 0.0011 },
       address: "Sem dados confirmados",
       isEstimate: true
     },

@@ -1301,6 +1301,7 @@ async function startServer() {
     const healthcare = tags.healthcare || '';
     const social = tags.social_facility || '';
     const shop = tags.shop || '';
+    const beauty = tags.shop === 'beauty' || tags.shop === 'hairdresser' || tags.beauty || '';
     const name = (tags.name || '').toLowerCase();
 
     // EXCLUSÃO CRÍTICA: clínicas/lojas veterinárias e de animais são por vezes mal
@@ -1310,6 +1311,22 @@ async function startServer() {
       amenity === 'veterinary' || healthcare === 'veterinary' || shop === 'pet' ||
       name.includes('veterinár') || name.includes('veterinar') ||
       name.includes('animal') || name.includes('pet shop') || name.includes('petshop')
+    ) {
+      return null;
+    }
+
+    // EXCLUSÃO CRÍTICA: cabeleireiros, barbearias, clínicas de estética e salões de
+    // beleza aparecem por vezes mal classificados no OSM com amenity=clinic ou
+    // healthcare=clinic (ex: "Clínica de Estética X"), sem a etiqueta "shop" que os
+    // excluiria pela regra abaixo. Nunca podem aparecer como centro de saúde real —
+    // já aconteceu indicarem um cabeleireiro em vez de um hospital numa emergência.
+    if (
+      beauty || amenity === 'hairdresser' ||
+      name.includes('cabeleireir') || name.includes('barbearia') || name.includes('barbeiro') ||
+      name.includes('salão de beleza') || name.includes('salao de beleza') ||
+      name.includes('estética') || name.includes('estetica') ||
+      name.includes('manicure') || name.includes('pedicure') || name.includes('unhas') ||
+      name.includes('spa') || name.includes('nail')
     ) {
       return null;
     }
