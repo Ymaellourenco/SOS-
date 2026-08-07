@@ -549,51 +549,51 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
 
                 <div className="group">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Acessibilidade: Ativação por Voz</label>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <div 
                       onClick={toggleVoice}
-                      className="bg-slate-50 border border-slate-100 rounded-[32px] p-4 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
+                      className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-white p-2 rounded-xl shadow-sm">
-                          <Volume2 className={cn("w-4 h-4", voiceEnabled ? "text-red-500" : "text-slate-300")} />
+                      <div className="flex items-center gap-2">
+                        <div className="bg-white p-1.5 rounded-lg shadow-sm">
+                          <Volume2 className={cn("w-3 h-3", voiceEnabled ? "text-red-500" : "text-slate-300")} />
                         </div>
                         <div>
-                          <span className="text-[10px] font-black uppercase text-slate-900 block">Navegação por Voz</span>
-                          <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">Lê os botões e estados da app</span>
+                          <span className="text-[9px] font-black uppercase text-slate-900 block">Navegação por Voz</span>
+                          <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wider">Lê os botões e estados da app</span>
                         </div>
                       </div>
                       <div className={cn(
-                        "w-10 h-5 rounded-full transition-colors relative",
+                        "w-8 h-4 rounded-full transition-colors relative",
                         voiceEnabled ? "bg-red-500" : "bg-slate-200"
                       )}>
                         <motion.div 
-                          animate={{ x: voiceEnabled ? 20 : 2 }}
-                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                          animate={{ x: voiceEnabled ? 16 : 2 }}
+                          className="absolute top-1 w-2 h-2 bg-white rounded-full shadow-sm"
                         />
                       </div>
                     </div>
 
                     <div 
                       onClick={toggleVoiceCommands}
-                      className="bg-slate-50 border border-slate-100 rounded-[32px] p-4 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
+                      className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-white p-2 rounded-xl shadow-sm">
-                          <Mic className={cn("w-4 h-4", voiceCommandsEnabled ? "text-red-500" : "text-slate-300")} />
+                      <div className="flex items-center gap-2">
+                        <div className="bg-white p-1.5 rounded-lg shadow-sm">
+                          <Mic className={cn("w-3 h-3", voiceCommandsEnabled ? "text-red-500" : "text-slate-300")} />
                         </div>
                         <div>
-                          <span className="text-[10px] font-black uppercase text-slate-900 block">Comandos de Voz</span>
-                          <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">Diga "SOS" para ativar ajuda imediata</span>
+                          <span className="text-[9px] font-black uppercase text-slate-900 block">Comandos de Voz</span>
+                          <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wider">Diga "SOS" para ativar ajuda imediata</span>
                         </div>
                       </div>
                       <div className={cn(
-                        "w-10 h-5 rounded-full transition-colors relative",
+                        "w-8 h-4 rounded-full transition-colors relative",
                         voiceCommandsEnabled ? "bg-red-500" : "bg-slate-200"
                       )}>
                         <motion.div 
-                          animate={{ x: voiceCommandsEnabled ? 20 : 2 }}
-                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                          animate={{ x: voiceCommandsEnabled ? 16 : 2 }}
+                          className="absolute top-1 w-2 h-2 bg-white rounded-full shadow-sm"
                         />
                       </div>
                     </div>
