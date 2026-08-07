@@ -48,10 +48,54 @@ const SITUATIONAL_CONTEXT_TTL = 2 * 60 * 1000; // 2 minutos
  * a IA passa a poder responder com factos verificados em vez de arriscar uma
  * alucinação (como aconteceu — nomes de hospital inventados/incorretos).
  */
+/**
+ * Guarda o último resultado real (por tipo de local) que a função acima já deu à
+ * IA para responder no chat — para que o botão "Ver X mais próximo" reutilize
+ * exatamente o mesmo local, em vez de fazer uma pesquisa nova e independente.
+ *
+ * BUG REAL que isto corrige (Ago 2026): o texto do chat e o botão de direções
+ * podiam apontar para sítios DIFERENTES na mesma conversa — ex: o chat dizia
+ * "Bombeiros Municipais de Viseu, a 0.8km" (vindo da lista curada de reserva,
+ * porque a Overpass falhou nesse pedido específico), e o botão pouco depois
+ * abria direções para "Bombeiros Sapadores de Viseu, a 1.1km" (porque dessa vez
+ * a Overpass respondeu). A Overpass é instável o suficiente para que dois
+ * pedidos segundos à parte, mesmo com coordenadas quase iguais, possam ter
+ * sucesso/falha diferentes — por isso reutilizar o resultado já obtido em vez de
+ * perguntar outra vez é a única forma de garantir que nunca se contradizem.
+ */
+let lastResolvedNearbyPlaces: {
+  byType: Partial<Record<EmergencyPOI['type'], EmergencyPOI & { distance: number }>>;
+  lat: number;
+  lng: number;
+  timestamp: number;
+} | null = null;
+
+const NEARBY_PLACES_REUSE_TTL = 5 * 60 * 1000; // 5 minutos
+const NEARBY_PLACES_REUSE_MAX_DRIFT_KM = 3; // além disto, a pessoa pode já ter-se movido demasiado
+
+/**
+ * Devolve o local já mostrado no chat para este tipo (hospital, bombeiros...), se
+ * ainda for recente e a localização atual não tiver mudado muito — para o botão
+ * de direções usar exatamente o mesmo sítio que a IA acabou de mencionar, em vez
+ * de arriscar uma pesquisa nova que dê uma resposta diferente (ver nota acima).
+ */
+export function getLastResolvedNearbyPlace(
+  type: EmergencyPOI['type'],
+  currentLat: number,
+  currentLng: number
+): (EmergencyPOI & { distance: number }) | null {
+  if (!lastResolvedNearbyPlaces) return null;
+  if (Date.now() - lastResolvedNearbyPlaces.timestamp > NEARBY_PLACES_REUSE_TTL) return null;
+  const drift = calculateDistance(currentLat, currentLng, lastResolvedNearbyPlaces.lat, lastResolvedNearbyPlaces.lng);
+  if (drift > NEARBY_PLACES_REUSE_MAX_DRIFT_KM) return null;
+  return lastResolvedNearbyPlaces.byType[type] ?? null;
+}
+
 async function buildNearbyRealPlacesText(lat: number, lng: number): Promise<string> {
   try {
     const pois = await fetchNearbyEmergencyPOIs(lat, lng, 15);
     if (!pois || pois.length === 0) {
+      lastResolvedNearbyPlaces = { byType: {}, lat, lng, timestamp: Date.now() };
       return 'LOCAIS REAIS PRÓXIMOS: pesquisa em tempo real sem resultados nesta zona — não mencione nenhum nome de hospital/esquadra/quartel específico, apenas incentive a usar o botão de pesquisa real da app ou ligar 112/999.';
     }
 
@@ -73,6 +117,20 @@ async function buildNearbyRealPlacesText(lat: number, lng: number): Promise<stri
     const nearestHealthCenter = pickNearest('health_center');
     const nearestPolice = pickNearest('police');
     const nearestFire = pickNearest('fire');
+    const nearestMunicipality = pickNearest('municipality');
+
+    // Guarda o que foi encontrado para o botão reutilizar depois (ver função acima).
+    lastResolvedNearbyPlaces = {
+      byType: {
+        hospital: nearestHospital,
+        health_center: nearestHealthCenter,
+        police: nearestPolice,
+        fire: nearestFire,
+        municipality: nearestMunicipality
+      },
+      lat, lng,
+      timestamp: Date.now()
+    };
 
     const lines: string[] = [];
     const describe = (label: string, p?: typeof withDistance[number]) => {
@@ -85,6 +143,7 @@ async function buildNearbyRealPlacesText(lat: number, lng: number): Promise<stri
     describe('Centro de Saúde mais próximo', nearestHealthCenter);
     describe('Esquadra/Polícia mais próxima', nearestPolice);
     describe('Bombeiros mais próximos', nearestFire);
+    describe('Câmara Municipal/Proteção Civil mais próxima', nearestMunicipality);
 
     if (lines.length === 0) {
       return 'LOCAIS REAIS PRÓXIMOS: pesquisa em tempo real sem resultados nesta zona — não mencione nenhum nome de hospital/esquadra/quartel específico, apenas incentive a usar o botão de pesquisa real da app ou ligar 112/999.';

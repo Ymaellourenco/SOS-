@@ -12,7 +12,8 @@ import { triggerSOS, sendAlertNotification } from '../../lib/notifications';
 import { liveLocationService } from '../../lib/liveLocationService';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
-import { findSuggestedGuide, findExplicitDestinationType, isVagueRelocationRequest, isShortAffirmativeDistressReply, indicatesTrappedOrSurrounded, indicatesWantsToConfirmSafety, indicatesSuicidalIdeation, buildSituationalContext, DestinationType, getHumanInstantResponse, getOfflineResponse, callDatabricksAI } from '../../services/aiHelper';
+import { findSuggestedGuide, findExplicitDestinationType, isVagueRelocationRequest, isShortAffirmativeDistressReply, indicatesTrappedOrSurrounded, indicatesWantsToConfirmSafety, indicatesSuicidalIdeation, buildSituationalContext, DestinationType, getHumanInstantResponse, getOfflineResponse, callDatabricksAI, getLastResolvedNearbyPlace } from '../../services/aiHelper';
+import type { EmergencyPOI } from '../../services/emergencyService';
 import { logger } from '../../lib/logger';
 
 interface Message {
@@ -235,28 +236,40 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
         return;
       }
 
-      const poiTypeMap: Record<DestinationType, string> = {
+      const poiTypeMap: Record<DestinationType, EmergencyPOI['type']> = {
         fire: 'fire', hospital: 'hospital', police: 'police', health_center: 'health_center', municipality: 'municipality'
       };
       const targetType = poiTypeMap[type];
 
-      const pois = await fetchNearbyEmergencyPOIs(latitude, longitude, 25);
-      const withDistance = pois.map(p => ({ ...p, distance: calculateDistance(latitude, longitude, p.location.lat, p.location.lng) }));
+      // Reutiliza o resultado que a IA já mostrou no chat, se ainda for recente e a
+      // pessoa não se tiver mudado muito de sítio — para nunca abrir direções para um
+      // local diferente do que acabou de ser mencionado na conversa (ver nota em
+      // getLastResolvedNearbyPlace, em aiHelper.ts, sobre porque isto importa).
+      let reused = type === 'hospital'
+        ? (getLastResolvedNearbyPlace('hospital', latitude, longitude) ?? getLastResolvedNearbyPlace('health_center', latitude, longitude))
+        : getLastResolvedNearbyPlace(targetType, latitude, longitude);
 
-      let matching: typeof withDistance;
-      if (type === 'hospital') {
-        // Prioridade: hospital primeiro sempre que exista um, mesmo que um centro de
-        // saúde esteja mais perto. Só usamos centro de saúde como alternativa quando
-        // não há mesmo nenhum hospital por perto — nunca deixamos a pessoa sem opção.
-        // Dentro dos hospitais, preferimos sempre o público (SNS) ao privado, numa
-        // emergência — só usamos um privado se não houver mesmo nenhum público por perto.
-        const allHospitals = withDistance.filter(p => p.type === 'hospital').sort((a, b) => a.distance - b.distance);
-        const publicHospitals = allHospitals.filter(p => !p.isPrivate);
-        const hospitals = publicHospitals.length > 0 ? publicHospitals : allHospitals;
-        const healthCenters = withDistance.filter(p => p.type === 'health_center').sort((a, b) => a.distance - b.distance);
-        matching = hospitals.length > 0 ? hospitals : healthCenters;
+      let matching: (EmergencyPOI & { distance: number })[];
+      if (reused) {
+        matching = [reused];
       } else {
-        matching = withDistance.filter(p => p.type === targetType).sort((a, b) => a.distance - b.distance);
+        const pois = await fetchNearbyEmergencyPOIs(latitude, longitude, 25);
+        const withDistance = pois.map(p => ({ ...p, distance: calculateDistance(latitude, longitude, p.location.lat, p.location.lng) }));
+
+        if (type === 'hospital') {
+          // Prioridade: hospital primeiro sempre que exista um, mesmo que um centro de
+          // saúde esteja mais perto. Só usamos centro de saúde como alternativa quando
+          // não há mesmo nenhum hospital por perto — nunca deixamos a pessoa sem opção.
+          // Dentro dos hospitais, preferimos sempre o público (SNS) ao privado, numa
+          // emergência — só usamos um privado se não houver mesmo nenhum público por perto.
+          const allHospitals = withDistance.filter(p => p.type === 'hospital').sort((a, b) => a.distance - b.distance);
+          const publicHospitals = allHospitals.filter(p => !p.isPrivate);
+          const hospitals = publicHospitals.length > 0 ? publicHospitals : allHospitals;
+          const healthCenters = withDistance.filter(p => p.type === 'health_center').sort((a, b) => a.distance - b.distance);
+          matching = hospitals.length > 0 ? hospitals : healthCenters;
+        } else {
+          matching = withDistance.filter(p => p.type === targetType).sort((a, b) => a.distance - b.distance);
+        }
       }
 
       if (matching.length === 0) {
