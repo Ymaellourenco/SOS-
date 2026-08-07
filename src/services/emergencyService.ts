@@ -150,17 +150,21 @@ const REAL_PORTUGAL_HOSPITALS: { name: string; lat: number; lng: number }[] = [
   { name: "Hospital de Braga (Largo Carlos Amarante)", lat: 41.5623, lng: -8.4315 },
   { name: "Centro Hospitalar de São João, E.P.E. (Porto)", lat: 41.1815, lng: -8.6024 },
   { name: "Centro Hospitalar Universitário de Santo António (Porto)", lat: 41.1536, lng: -8.6103 },
-  { name: "Centro Hospitalar de Trás-os-Montes e Alto Douro, E.P.E. (Vila Real)", lat: 41.3033, lng: -7.7438 },
+  { name: "Centro Hospitalar de Trás-os-Montes e Alto Douro, E.P.E. (Vila Real)", lat: 41.310233, lng: -7.760078 },
   { name: "Unidade Local de Saúde do Nordeste, E.P.E. (Bragança)", lat: 41.8067, lng: -6.7567 },
   { name: "Centro Hospitalar Tondela-Viseu, E.P.E. — Hospital de São Teotónio (Viseu)", lat: 40.65033, lng: -7.90636 },
-  { name: "Unidade Local de Saúde da Guarda, E.P.E.", lat: 40.5364, lng: -7.2683 },
+  { name: "Unidade Local de Saúde da Guarda, E.P.E.", lat: 40.533056, lng: -7.274316 },
   { name: "Centro Hospitalar de Baixo Vouga, E.P.E. (Aveiro)", lat: 40.6413, lng: -8.6455 },
   { name: "Centro Hospitalar e Universitário de Coimbra, E.P.E.", lat: 40.1998, lng: -8.4194 },
   { name: "Centro Hospitalar de Leiria, E.P.E.", lat: 39.7436, lng: -8.8071 },
-  { name: "Unidade Local Saúde de Castelo Branco, E.P.E.", lat: 39.8222, lng: -7.4931 },
+  { name: "Unidade Local Saúde de Castelo Branco, E.P.E.", lat: 39.82275, lng: -7.49985 },
   { name: "Hospital Distrital de Santarém, E.P.E.", lat: 39.2369, lng: -8.6857 },
   { name: "Centro Hospitalar Lisboa Norte, E.P.E. — Hospital de Santa Maria (Lisboa)", lat: 38.7489, lng: -9.1607 },
   { name: "Centro Hospitalar de Setúbal, E.P.E.", lat: 38.5281, lng: -8.8929 },
+  // Portalegre e Évora (hospital + PSP, ambos abaixo): não encontrei uma fonte
+  // fiável com a coordenada exata do edifício — continuam a usar o centro da
+  // cidade (igual à entrada em DISTRICT_CAPITALS) como aproximação. Precisam de
+  // verificação manual, tal como a PSP de Viseu precisou.
   { name: "Unidade Local de Saúde do Norte Alentejano, E.P.E. (Portalegre)", lat: 39.2967, lng: -7.4306 },
   { name: "Hospital do Espírito Santo - Évora, E.P.E.", lat: 38.5711, lng: -7.9106 },
   { name: "Unidade Local de Saúde do Baixo Alentejo, E.P.E. (Beja)", lat: 38.0153, lng: -7.8650 },
@@ -239,13 +243,21 @@ function findNearestRealHospital(lat: number, lng: number): EmergencyPOI {
  * cidade mais testada até agora.
  */
 const REAL_POLICE_BY_CAPITAL: Record<string, { name: string; lat: number; lng: number }> = {
-  "Viseu": { name: "PSP — Comando Distrital de Viseu (Rua D. António Alves Martins)", lat: 40.6595, lng: -7.9128 },
+  // Coordenada corrigida (Ago 2026): a anterior (40.6595, -7.9128) caía perto da
+  // Porta do Soar (muralha histórica), não no edifício da PSP — confirmado por um
+  // utilizador que abriu a navegação real e viu o pin no monumento errado. Esta
+  // atualiza para perto do Largo Dom António Alves Martins, na mesma rua — mais
+  // próxima do edifício real, mas ainda vale a pena confirmar no terreno/Google Maps.
+  "Viseu": { name: "PSP — Comando Distrital de Viseu (Rua D. António Alves Martins)", lat: 40.656024, lng: -7.911622 },
   "Lisboa": { name: "PSP — Comando Metropolitano de Lisboa (Av. de Moscavide, Moscavide)", lat: 38.7727, lng: -9.1006 },
   "Porto": { name: "PSP — Comando Metropolitano do Porto (Largo 1º de Dezembro)", lat: 41.1543, lng: -8.6094 },
   "Braga": { name: "PSP — Comando Distrital de Braga (Largo de São Tiago)", lat: 41.5498, lng: -8.4265 },
   "Aveiro": { name: "PSP — Comando Distrital de Aveiro (Praça Marquês de Pombal)", lat: 40.6413, lng: -8.6534 },
   "Beja": { name: "PSP — Comando Distrital de Beja (Rua D. Nuno Álvares Pereira)", lat: 38.0169, lng: -7.8632 },
   "Bragança": { name: "PSP — Comando Distrital de Bragança (Rua Dr. Manuel Bento)", lat: 41.8074, lng: -6.7568 },
+  // Castelo Branco, Guarda e Portalegre: sem fonte fiável com a coordenada exata
+  // do edifício da PSP — continuam a usar o centro da cidade como aproximação
+  // (mesma ressalva que a Évora, acima). Precisam de verificação manual.
   "Castelo Branco": { name: "PSP — Comando Distrital de Castelo Branco (EN18, Cruz do Montalvão)", lat: 39.8222, lng: -7.4931 },
   "Coimbra": { name: "PSP — Comando Distrital de Coimbra (Rua Olímpio Nicolau Rui Fernandes)", lat: 40.2111, lng: -8.4291 },
   "Évora": { name: "PSP — Comando Distrital de Évora (Rua Francisco Soares Lusitano)", lat: 38.5711, lng: -7.9106 },
@@ -255,7 +267,10 @@ const REAL_POLICE_BY_CAPITAL: Record<string, { name: string; lat: number; lng: n
   "Portalegre": { name: "PSP — Comando Distrital de Portalegre (Praça da República)", lat: 39.2967, lng: -7.4306 },
   "Setúbal": { name: "PSP — Comando Distrital de Setúbal (Av. Luísa Todi)", lat: 38.5245, lng: -8.8912 },
   "Viana do Castelo": { name: "PSP — Comando Distrital de Viana do Castelo (Rua de Aveiro)", lat: 41.6932, lng: -8.8330 },
-  "Vila Real": { name: "PSP — Comando Distrital de Vila Real (EN2, Almodena)", lat: 41.3033, lng: -7.7438 }
+  // Coordenada corrigida (Ago 2026): fonte com morada e GPS reais confirmados
+  // (discoverdouro.pt) — antes partilhava a mesma coordenada do hospital de
+  // Vila Real (erro de "centro da cidade" copiado para os dois).
+  "Vila Real": { name: "PSP — Comando Distrital de Vila Real (EN2, Almodena)", lat: 41.295372, lng: -7.755435 }
 };
 const REAL_FIRE_BY_CAPITAL: Record<string, { name: string; lat: number; lng: number }> = {
   "Viseu": { name: "Bombeiros Municipais de Viseu (Praça D. João I)", lat: 40.6614, lng: -7.9101 },
@@ -423,7 +438,10 @@ const REAL_MUNICIPALITIES: { concelho: string; name: string; lat: number; lng: n
   { concelho: "Cantanhede", name: "Câmara Municipal de Cantanhede", lat: 40.34694, lng: -8.59448 },
   { concelho: "Carregal do Sal", name: "Câmara Municipal de Carregal do Sal", lat: 40.43554, lng: -8.00203 },
   { concelho: "Cascais", name: "Câmara Municipal de Cascais", lat: 38.7326, lng: -9.41037 },
-  { concelho: "Castelo Branco", name: "Câmara Municipal de Castelo Branco", lat: 40.13795, lng: -7.5004 },
+  // Coordenada corrigida (Ago 2026): tinha exatamente a mesma coordenada que o
+  // Fundão (erro de copy-paste na fonte original) — atualizada para o centro
+  // real de Castelo Branco.
+  { concelho: "Castelo Branco", name: "Câmara Municipal de Castelo Branco", lat: 39.8197, lng: -7.4965 },
   { concelho: "Castelo de Paiva", name: "Câmara Municipal de Castelo de Paiva", lat: 41.04106, lng: -8.27195 },
   { concelho: "Castelo de Vide", name: "Câmara Municipal de Castelo de Vide", lat: 39.41528, lng: -7.45487 },
   { concelho: "Castro Marim", name: "Câmara Municipal de Castro Marim", lat: 37.21731, lng: -7.44212 },
@@ -457,7 +475,10 @@ const REAL_MUNICIPALITIES: { concelho: string; name: string; lat: number; lng: n
   { concelho: "Golegã", name: "Câmara Municipal de Golegã", lat: 39.40228, lng: -8.48925 },
   { concelho: "Gondomar", name: "Câmara Municipal de Gondomar", lat: 41.14435, lng: -8.53667 },
   { concelho: "Grândola", name: "Câmara Municipal de Grândola", lat: 38.17691, lng: -8.57151 },
-  { concelho: "Guarda", name: "Câmara Municipal de Guarda", lat: 40.77783, lng: -7.35034 },
+  // Coordenada corrigida (Ago 2026): tinha exatamente a mesma coordenada que
+  // Trancoso (erro de copy-paste na fonte original) — atualizada para o centro
+  // real da Guarda.
+  { concelho: "Guarda", name: "Câmara Municipal de Guarda", lat: 40.5364, lng: -7.2657 },
   { concelho: "Guimarães", name: "Câmara Municipal de Guimarães", lat: 41.44418, lng: -8.29253 },
   { concelho: "Horta", name: "Câmara Municipal de Horta", lat: 38.53714, lng: -28.6262 },
   { concelho: "Idanha-a-Nova", name: "Câmara Municipal de Idanha-a-Nova", lat: 39.92261, lng: -7.24236 },
