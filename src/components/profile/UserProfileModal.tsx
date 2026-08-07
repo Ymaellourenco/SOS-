@@ -513,6 +513,20 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                 </div>
 
                 <div className="group">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Condições Médicas Preexistentes</label>
+                  <div className="relative">
+                    <FileText className="absolute left-4 top-4 w-4 h-4 text-slate-300 transition-colors" />
+                    <textarea 
+                      value={profile.chronicConditions}
+                      onChange={e => handleFieldChange('chronicConditions', e.target.value)}
+                      placeholder="Ex: Diabetes, Hipertensão, Asma, Doença Cardíaca..."
+                      rows={2}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-3xl py-4 pl-11 pr-6 text-sm outline-none focus:bg-white focus:border-red-100 transition-all text-slate-900 font-medium resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="group">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Alergias Graves</label>
                   <div className="relative">
                     <AlertTriangle className="absolute left-4 top-4 w-4 h-4 text-slate-300 transition-colors" />
@@ -583,20 +597,6 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                         />
                       </div>
                     </div>
-                  </div>
-                </div>
-
-                <div className="group">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Condições Médicas Preexistentes</label>
-                  <div className="relative">
-                    <FileText className="absolute left-4 top-4 w-4 h-4 text-slate-300 transition-colors" />
-                    <textarea 
-                      value={profile.chronicConditions}
-                      onChange={e => handleFieldChange('chronicConditions', e.target.value)}
-                      placeholder="Ex: Diabetes, Hipertensão, Asma, Doença Cardíaca..."
-                      rows={2}
-                      className="w-full bg-slate-50 border border-slate-100 rounded-3xl py-4 pl-11 pr-6 text-sm outline-none focus:bg-white focus:border-red-100 transition-all text-slate-900 font-medium resize-none"
-                    />
                   </div>
                 </div>
 
