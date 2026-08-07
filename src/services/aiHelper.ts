@@ -1,6 +1,7 @@
 import { EmergencyGuide, UserProfileData } from '../types';
 import { OFFLINE_GUIDES } from '../constants';
 import { calculateDistance } from '../lib/utils';
+import { fetchNearbyEmergencyPOIs, EmergencyPOI } from './emergencyService';
 
 // Cache simples: evita repetir o pedido a /api/alerts a cada mensagem enviada.
 let situationalContextCache: { data: string; timestamp: number; lat: number; lng: number } | null = null;
@@ -12,9 +13,70 @@ const SITUATIONAL_CONTEXT_TTL = 2 * 60 * 1000; // 2 minutos
  * e não apenas no que o utilizador escreveu. Nunca deixa a IA "às cegas" quando existe
  * informação oficial disponível sobre a zona.
  */
+/**
+ * Constrói um bloco de texto com os locais de emergência REAIS e verificados mais
+ * próximos (hospital, esquadra, quartel de bombeiros) — a mesma pesquisa usada no
+ * botão de "pesquisa real" da app (Overpass/OSM + base curada de reserva).
+ *
+ * Isto existe para dar à IA de chat dados verdadeiros a que se agarrar. Sem isto, a
+ * IA recebia apenas a instrução "nunca invente nomes de hospitais" mas nenhum nome
+ * real para usar em alternativa — e, na prática, modelos de linguagem tendem a
+ * inventar um nome plausível em vez de admitir que não sabem, especialmente sob
+ * pressão de uma pergunta direta numa emergência. Ao fornecer aqui os locais reais,
+ * a IA passa a poder responder com factos verificados em vez de arriscar uma
+ * alucinação (como aconteceu — nomes de hospital inventados/incorretos).
+ */
+async function buildNearbyRealPlacesText(lat: number, lng: number): Promise<string> {
+  try {
+    const pois = await fetchNearbyEmergencyPOIs(lat, lng, 15);
+    if (!pois || pois.length === 0) {
+      return 'LOCAIS REAIS PRÓXIMOS: pesquisa em tempo real sem resultados nesta zona — não mencione nenhum nome de hospital/esquadra/quartel específico, apenas incentive a usar o botão de pesquisa real da app ou ligar 112/999.';
+    }
+
+    const withDistance = pois.map(p => ({
+      ...p,
+      distance: calculateDistance(lat, lng, p.location.lat, p.location.lng)
+    }));
+
+    const pickNearest = (type: EmergencyPOI['type'], preferPublic = false) => {
+      let candidates = withDistance.filter(p => p.type === type);
+      if (preferPublic) {
+        const publicOnes = candidates.filter(p => !p.isPrivate);
+        if (publicOnes.length > 0) candidates = publicOnes;
+      }
+      return candidates.sort((a, b) => a.distance - b.distance)[0];
+    };
+
+    const nearestHospital = pickNearest('hospital', true);
+    const nearestHealthCenter = pickNearest('health_center');
+    const nearestPolice = pickNearest('police');
+    const nearestFire = pickNearest('fire');
+
+    const lines: string[] = [];
+    const describe = (label: string, p?: typeof withDistance[number]) => {
+      if (!p) return;
+      const addr = p.address ? `, ${p.address}` : '';
+      const estimateNote = p.isEstimate ? ' (posição aproximada — confirme ligando 112 ou pelo botão de pesquisa)' : '';
+      lines.push(`- ${label}: ${p.name}${addr} — a ${p.distance.toFixed(1)}km${estimateNote}`);
+    };
+    describe('Hospital mais próximo', nearestHospital);
+    describe('Centro de Saúde mais próximo', nearestHealthCenter);
+    describe('Esquadra/Polícia mais próxima', nearestPolice);
+    describe('Bombeiros mais próximos', nearestFire);
+
+    if (lines.length === 0) {
+      return 'LOCAIS REAIS PRÓXIMOS: pesquisa em tempo real sem resultados nesta zona — não mencione nenhum nome de hospital/esquadra/quartel específico, apenas incentive a usar o botão de pesquisa real da app ou ligar 112/999.';
+    }
+
+    return `LOCAIS REAIS PRÓXIMOS (verificados agora, via pesquisa real da app):\n${lines.join('\n')}\n\nPode mencionar estes nomes e distâncias EXATAMENTE como estão acima, se for útil para a pessoa. NUNCA invente outro nome, endereço ou distância que não esteja nesta lista.`;
+  } catch (error) {
+    return 'LOCAIS REAIS PRÓXIMOS: não foi possível confirmar agora (falha de rede) — não mencione nenhum nome de hospital/esquadra/quartel específico, apenas incentive a usar o botão de pesquisa real da app ou ligar 112/999.';
+  }
+}
+
 export const buildSituationalContext = async (lat: number | null, lng: number | null): Promise<string> => {
   if (lat === null || lng === null) {
-    return 'LOCALIZAÇÃO: não disponível — não é possível cruzar com alertas oficiais próximos.';
+    return 'LOCALIZAÇÃO: não disponível — não é possível cruzar com alertas oficiais próximos, nem confirmar hospitais/esquadras/quartéis reais perto da pessoa. Se perguntarem por um local concreto, peça para ativar a localização ou use o botão de pesquisa real da app.';
   }
 
   if (
@@ -25,37 +87,43 @@ export const buildSituationalContext = async (lat: number | null, lng: number | 
     return situationalContextCache.data;
   }
 
-  try {
-    const response = await fetch('/api/alerts');
-    if (!response.ok) throw new Error('Falha ao obter alertas');
-    const alerts: any[] = await response.json();
+  // As duas pesquisas (alertas oficiais + locais reais próximos) são independentes
+  // uma da outra — a falha de uma nunca deve impedir a outra de ser usada.
+  const [alertsText, nearbyPlacesText] = await Promise.all([
+    (async () => {
+      try {
+        const response = await fetch('/api/alerts');
+        if (!response.ok) throw new Error('Falha ao obter alertas');
+        const alerts: any[] = await response.json();
 
-    const nearby = alerts
-      .map(a => ({ ...a, distance: calculateDistance(lat, lng, a.location.lat, a.location.lng) }))
-      .filter(a => a.distance <= 50)
-      .sort((a, b) => {
-        const rank = (s: string) => s === 'high' ? 0 : s === 'medium' ? 1 : 2;
-        const rankDiff = rank(a.severity) - rank(b.severity);
-        return rankDiff !== 0 ? rankDiff : a.distance - b.distance;
-      })
-      .slice(0, 5);
+        const nearby = alerts
+          .map(a => ({ ...a, distance: calculateDistance(lat, lng, a.location.lat, a.location.lng) }))
+          .filter(a => a.distance <= 50)
+          .sort((a, b) => {
+            const rank = (s: string) => s === 'high' ? 0 : s === 'medium' ? 1 : 2;
+            const rankDiff = rank(a.severity) - rank(b.severity);
+            return rankDiff !== 0 ? rankDiff : a.distance - b.distance;
+          })
+          .slice(0, 5);
 
-    let text: string;
-    if (nearby.length === 0) {
-      text = 'ALERTAS OFICIAIS PRÓXIMOS: nenhum alerta ativo dentro de 50km da localização do utilizador neste momento, segundo as fontes oficiais (ANEPC/IPMA).';
-    } else {
-      const severityLabel = (s: string) => s === 'high' ? 'CRÍTICO' : s === 'medium' ? 'IMPORTANTE' : 'INFORMATIVO';
-      const lines = nearby.map(a =>
-        `- [${severityLabel(a.severity)}] ${a.title} — a ${a.distance.toFixed(1)}km${a.isActive ? ' (ainda ATIVO/em curso)' : ''}. ${a.description}`
-      );
-      text = `ALERTAS OFICIAIS PRÓXIMOS (ANEPC/IPMA, confirmados, dentro de 50km):\n${lines.join('\n')}\n\nCruze estes dados com o que o utilizador descrever. Se o utilizador mencionar algo consistente com um destes alertas, trate como corroborado e aumente a urgência. Se um alerta oficial existir mas o utilizador disser que está tudo bem, informe-o da existência do alerta na mesma, sem alarmismo.`;
-    }
+        if (nearby.length === 0) {
+          return 'ALERTAS OFICIAIS PRÓXIMOS: nenhum alerta ativo dentro de 50km da localização do utilizador neste momento, segundo as fontes oficiais (ANEPC/IPMA).';
+        }
+        const severityLabel = (s: string) => s === 'high' ? 'CRÍTICO' : s === 'medium' ? 'IMPORTANTE' : 'INFORMATIVO';
+        const lines = nearby.map(a =>
+          `- [${severityLabel(a.severity)}] ${a.title} — a ${a.distance.toFixed(1)}km${a.isActive ? ' (ainda ATIVO/em curso)' : ''}. ${a.description}`
+        );
+        return `ALERTAS OFICIAIS PRÓXIMOS (ANEPC/IPMA, confirmados, dentro de 50km):\n${lines.join('\n')}\n\nCruze estes dados com o que o utilizador descrever. Se o utilizador mencionar algo consistente com um destes alertas, trate como corroborado e aumente a urgência. Se um alerta oficial existir mas o utilizador disser que está tudo bem, informe-o da existência do alerta na mesma, sem alarmismo.`;
+      } catch (error) {
+        return 'ALERTAS OFICIAIS PRÓXIMOS: não foi possível consultar neste momento (falha de rede) — responda apenas com base no relato do utilizador e peça mais detalhes se necessário.';
+      }
+    })(),
+    buildNearbyRealPlacesText(lat, lng)
+  ]);
 
-    situationalContextCache = { data: text, timestamp: Date.now(), lat, lng };
-    return text;
-  } catch (error) {
-    return 'ALERTAS OFICIAIS PRÓXIMOS: não foi possível consultar neste momento (falha de rede) — responda apenas com base no relato do utilizador e peça mais detalhes se necessário.';
-  }
+  const text = `${alertsText}\n\n${nearbyPlacesText}`;
+  situationalContextCache = { data: text, timestamp: Date.now(), lat, lng };
+  return text;
 };
 
 export const findSuggestedGuide = (text: string): EmergencyGuide | undefined => {

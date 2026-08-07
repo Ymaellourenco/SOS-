@@ -204,6 +204,17 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
     if (findingDestination) return;
     setFindingDestination(type);
     voiceService.speak("A procurar o local mais próximo. Um momento.");
+
+    // CRÍTICO (Safari/iOS): window.open() só é permitido pelo bloqueador de pop-ups
+    // se acontecer de forma síncrona, ainda dentro do toque do utilizador. Todo o
+    // resto desta função usa await (localização, pesquisa de POIs, verificação de
+    // rota) — se esperássemos até ao fim para abrir a janela, o Safari já teria
+    // "esquecido" que isto começou com um toque real, e bloqueava o pop-up em
+    // silêncio, sem erro nenhum: a pessoa via o botão "a procurar" e depois nada.
+    // Por isso abrimos já aqui uma aba em branco, e só mais tarde apontamos essa
+    // mesma aba para o destino real assim que o soubermos.
+    const mapWindow = window.open('', '_blank');
+
     try {
       const { fetchNearbyEmergencyPOIs } = await import('../../services/emergencyService');
       const { calculateDistance } = await import('../../lib/utils');
@@ -219,6 +230,7 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
       } catch (geoError) {
         logger.error('Falha completa ao obter localização (nem GPS nem IP):', geoError);
         voiceService.speak("Não consegui obter a sua localização de forma nenhuma. Ligue 112.");
+        mapWindow?.close();
         setFindingDestination(null);
         return;
       }
@@ -249,6 +261,7 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
 
       if (matching.length === 0) {
         voiceService.speak("Não encontrei nenhum local desse tipo perto de si. Ligue 112 para assistência.");
+        mapWindow?.close();
         setFindingDestination(null);
         return;
       }
@@ -260,6 +273,7 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
         // real para uma posição que não existe é pior do que não mostrar nada.
         // Em vez de deixar a pessoa só com um aviso passivo, oferecemos já a ação real
         // que ajuda de verdade nesta situação: enviar a localização à rede de contactos.
+        mapWindow?.close();
         const warning = `Não tenho dados confirmados ${DESTINATION_LABELS_CONTRACTED[type]} perto de si neste momento. Ligue 112 — eles sabem a localização exata mais próxima. Entretanto, pode enviar já a sua localização à sua rede de contactos:`;
         const warningContent = `⚠️ ${warning}`;
         setMessages(prev => {
@@ -294,7 +308,30 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
         logger.warn('Verificação de rota segura falhou (a navegação continua na mesma):', e);
       }
 
-      window.open(url, '_blank');
+      // Aponta a aba já aberta (desde o início do toque) para o destino real. Se por
+      // algum motivo essa aba não existir (ex: bloqueador de pop-ups muito agressivo
+      // que bloqueou mesmo a abertura em branco), tentamos na mesma window.open como
+      // reserva, e se isso também falhar, deixamos sempre um link visível na
+      // conversa para a pessoa tocar manualmente — nunca falhamos em silêncio.
+      let opened = false;
+      if (mapWindow) {
+        try {
+          mapWindow.location.href = url;
+          opened = true;
+        } catch (e) {
+          logger.warn('Falha ao redirecionar a aba pré-aberta:', e);
+        }
+      }
+      if (!opened) {
+        const fallbackWindow = window.open(url, '_blank');
+        opened = !!fallbackWindow;
+      }
+      if (!opened) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `Não consegui abrir o mapa automaticamente (o navegador bloqueou a abertura). Toque aqui para abrir as direções: ${url}`
+        }]);
+      }
       if (type === 'hospital' && nearest.type !== 'hospital') {
         const note = `Não encontrei nenhum hospital perto de si — a abrir direções para o centro de saúde mais próximo, ${nearest.name}, a ${nearest.distance.toFixed(1)} quilómetros.`;
         setMessages(prev => [...prev, { role: 'assistant', content: note }]);
@@ -326,6 +363,7 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
     } catch (error) {
       logger.error('Falha ao encontrar destino próximo:', error);
       voiceService.speak("Não consegui aceder à sua localização. Verifique as permissões de GPS.");
+      mapWindow?.close();
     } finally {
       setFindingDestination(null);
     }
