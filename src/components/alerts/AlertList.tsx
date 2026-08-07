@@ -164,7 +164,6 @@ export function AlertList() {
           <button
             onClick={() => {
               setFilterMode('all');
-              setViewMode('list');
               voiceService.speak("Ver todos os alertas nacionais.");
             }}
             className={cn(
@@ -179,7 +178,6 @@ export function AlertList() {
           </button>
         </div>
 
-        {filterMode === 'nearby' && (
         <div className="flex items-center gap-2">
           <div className="flex-1 bg-white border border-slate-100 p-1 rounded-2xl flex shadow-sm">
              <button 
@@ -204,7 +202,6 @@ export function AlertList() {
              </button>
           </div>
         </div>
-        )}
       </div>
 
       {loading && alerts.length === 0 ? (
@@ -361,7 +358,7 @@ export function AlertList() {
           </div>
         )}
 
-        {viewMode === 'map' && filterMode === 'nearby' ? (
+        {viewMode === 'map' ? (
           <div className="space-y-4">
             <React.Suspense fallback={
               <div className="flex flex-col items-center justify-center h-[400px] bg-slate-50 rounded-[32px] gap-3">
