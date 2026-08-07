@@ -3,6 +3,28 @@ import { OFFLINE_GUIDES } from '../constants';
 import { calculateDistance } from '../lib/utils';
 import { fetchNearbyEmergencyPOIs, EmergencyPOI } from './emergencyService';
 
+/**
+ * Verifica se `keyword` aparece em `input` como palavra/frase inteira, não como
+ * pedaço de dentro de outra palavra.
+ *
+ * BUG REAL que isto corrige (Ago 2026): a palavra-chave solta "mar" (para
+ * detetar afogamento) fazia disparar o guia de afogamento sempre que alguém
+ * escrevia "câmara municipal" — porque "mar" está literalmente contido dentro
+ * de "câMARa". Um simples `input.includes(keyword)` não distingue "mar" como
+ * palavra própria de "mar" como pedaço de "câmara", "marido", "mármore", etc.
+ * Isto acontece com qualquer palavra-chave curta (rio, água, calor...), por
+ * isso a verificação de fronteira de palavra aplica-se a todas, não só a esta.
+ */
+function containsWholeWord(input: string, keyword: string): boolean {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // \w do JavaScript não inclui letras acentuadas — por isso define-se aqui um
+  // conjunto próprio de "caracteres de palavra" em português (com acentos) para
+  // que a fronteira funcione corretamente em frases como "café" ou "não".
+  const wordChar = 'a-zà-öø-ÿ0-9';
+  const pattern = new RegExp(`(?<![${wordChar}])${escaped}(?![${wordChar}])`, 'i');
+  return pattern.test(input);
+}
+
 // Cache simples: evita repetir o pedido a /api/alerts a cada mensagem enviada.
 let situationalContextCache: { data: string; timestamp: number; lat: number; lng: number } | null = null;
 const SITUATIONAL_CONTEXT_TTL = 2 * 60 * 1000; // 2 minutos
@@ -169,7 +191,7 @@ export const findSuggestedGuide = (text: string): EmergencyGuide | undefined => 
     heat: ['onda de calor', 'muito calor', 'calor extremo', 'insolação', 'desidratado', 'desidratação', 'heatwave', 'heat stroke']
   };
   for (const [id, keywords] of Object.entries(mappings)) {
-    if (keywords.some(kw => input.includes(kw))) {
+    if (keywords.some(kw => containsWholeWord(input, kw))) {
       return OFFLINE_GUIDES.find(g => g.id === id);
     }
   }
@@ -198,7 +220,7 @@ export const indicatesTrappedOrSurrounded = (text: string): boolean => {
     'fumo é muito intenso', 'não vejo nada', 'nao vejo nada', 'estou encurralado', 'estou bloqueado',
     'não consigo respirar', 'nao consigo respirar'
   ];
-  return keywords.some(kw => input.includes(kw));
+  return keywords.some(kw => containsWholeWord(input, kw));
 };
 
 /**
@@ -218,7 +240,7 @@ export const indicatesSuicidalIdeation = (text: string): boolean => {
     'pensamentos suicidas', 'tirar a minha vida', 'já não vale a pena viver',
     'ja nao vale a pena viver', 'quero desaparecer para sempre'
   ];
-  return keywords.some(kw => input.includes(kw));
+  return keywords.some(kw => containsWholeWord(input, kw));
 };
 
 /**
@@ -234,7 +256,7 @@ export const indicatesWantsToConfirmSafety = (text: string): boolean => {
     'estou bem e em seguranca', 'estou bem e em segurança', 'diz-lhes que estou bem',
     'avisa que estou bem', 'informar que estou bem'
   ];
-  return keywords.some(kw => input.includes(kw));
+  return keywords.some(kw => containsWholeWord(input, kw));
 };
 
 /**
@@ -274,7 +296,7 @@ const VAGUE_RELOCATION_KEYWORDS = [
 export const findExplicitDestinationType = (text: string): DestinationType | undefined => {
   const input = text.toLowerCase();
   for (const [type, keywords] of Object.entries(EXPLICIT_DESTINATION_KEYWORDS) as [DestinationType, string[]][]) {
-    if (keywords.some(kw => input.includes(kw))) {
+    if (keywords.some(kw => containsWholeWord(input, kw))) {
       return type;
     }
   }
@@ -284,18 +306,18 @@ export const findExplicitDestinationType = (text: string): DestinationType | und
 /** Se o texto expressar vontade de ir para algum lado sem dizer qual. */
 export const isVagueRelocationRequest = (text: string): boolean => {
   const input = text.toLowerCase();
-  return VAGUE_RELOCATION_KEYWORDS.some(kw => input.includes(kw));
+  return VAGUE_RELOCATION_KEYWORDS.some(kw => containsWholeWord(input, kw));
 };
 
 export const getHumanInstantResponse = (text: string): string | null => {
   const input = text.toLowerCase();
-  if (input.includes('estão-me a seguir') || input.includes('seguir') || input.includes('perseguido')) {
+  if (containsWholeWord(input, 'estão-me a seguir') || containsWholeWord(input, 'seguir') || containsWholeWord(input, 'perseguido')) {
     return "Mantenha a calma, estou aqui consigo. Procure um local iluminado e com movimento agora mesmo. Não pare de andar. Preparei o guia de segurança para si abaixo.";
   }
-  if (input.includes('enfarte') || input.includes('coração') || input.includes('dor no peito')) {
+  if (containsWholeWord(input, 'enfarte') || containsWholeWord(input, 'coração') || containsWholeWord(input, 'dor no peito')) {
     return "Tente manter-se sentado e respire fundo. Evite qualquer esforço. Já localizei o protocolo de emergência cardíaca para o orientar.";
   }
-  if (input.includes('fogo') || input.includes('incêndio')) {
+  if (containsWholeWord(input, 'fogo') || containsWholeWord(input, 'incêndio')) {
     return "Saia do local imediatamente! Não use elevadores sob nenhuma circunstância. Gatinhe se houver fumo. As instruções de evacuação estão prontas abaixo.";
   }
   return null;
