@@ -90,7 +90,7 @@ export const findSuggestedGuide = (text: string): EmergencyGuide | undefined => 
     ],
     flood: [
       'inundação', 'cheias', 'barrenta', 'águas', 'flood', 'enchente', 'flooding', 'furacão', 'furacao', 'hurricane',
-      'tempestade', 'storm', 'vento forte', 'ciclone', 'tornado', 'vento estranho', 'céu está verde', 'vento fortíssimo',
+      'tempestade', 'storm', 'vento forte', 'ciclone', 'tornado', 'tufão', 'tufao', 'typhoon', 'vento estranho', 'céu está verde', 'vento fortíssimo',
       'árvores todas a dobrar', 'caiu granizo enorme', 'barulho parecido com um comboio', 'nuvem em funil',
       'vai formar um tornado', 'tempestade muito agressiva', 'água está a subir', 'rua cheia de água',
       'rio saiu da margem', 'garagem inundada', 'não consigo sair de casa', 'estou preso', 'corrente é muito forte',

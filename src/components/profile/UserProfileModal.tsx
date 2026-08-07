@@ -526,6 +526,13 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                   </div>
                 </div>
 
+                <div className="bg-slate-50 p-5 rounded-[28px] border border-black/5">
+                  <p className="text-[10px] leading-relaxed text-slate-500 font-medium">
+                    <span className="font-black uppercase text-slate-400 block mb-1">Privacidade de Dados:</span>
+                    Estas informações são guardadas localmente no seu dispositivo e servem exclusivamente para o seu apoio em caso de emergência. O SOS MAIS não utiliza estes dados para qualquer outro fim.
+                  </p>
+                </div>
+
                 <div className="group">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Acessibilidade: Ativação por Voz</label>
                   <div className="space-y-2">
@@ -593,37 +600,8 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Diagnóstico de Sistema</label>
-                  <div className="bg-slate-50 border border-slate-100 rounded-[32px] p-4 space-y-4">
-                    {fcmToken && (
-                      <div className="p-3 bg-slate-100 rounded-xl overflow-hidden">
-                        <span className="text-[7px] font-black uppercase text-slate-400 block mb-1">Token de Dispositivo (Diagnóstico):</span>
-                        <code className="text-[7px] break-all text-slate-600 font-mono inline-block max-h-12 overflow-y-auto w-full">
-                          {fcmToken}
-                        </code>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-2 border-t border-black/5">
-                       <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Modo Offline</span>
-                       <span className={cn(
-                         "px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest",
-                         'serviceWorker' in navigator ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                       )}>
-                         {'serviceWorker' in navigator ? 'Suportado' : 'Não Suportado'}
-                       </span>
-                    </div>
-                  </div>
-                </div>
               </div>
 
-              <div className="bg-slate-50 p-5 rounded-[28px] border border-black/5">
-                <p className="text-[10px] leading-relaxed text-slate-500 font-medium">
-                  <span className="font-black uppercase text-slate-400 block mb-1">Privacidade de Dados:</span>
-                  Estas informações são guardadas localmente no seu dispositivo e servem exclusivamente para o seu apoio em caso de emergência. O SOS MAIS não utiliza estes dados para qualquer outro fim.
-                </p>
-              </div>
             </div>
 
             {/* Footer */}
