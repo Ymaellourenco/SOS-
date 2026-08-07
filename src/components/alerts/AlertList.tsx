@@ -323,37 +323,41 @@ export function AlertList() {
         animate={{ opacity: 1 }}
         className="space-y-4"
       >
-        {filterMode === 'nearby' && userLocation && (
-          <motion.div 
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2 w-fit"
-          >
-            <Navigation className="w-3 h-3 text-white fill-white shrink-0" />
-            <p className="text-[8px] font-black uppercase tracking-tight leading-none">
-              A 50km de {userLocation.lat.toFixed(2)}°N, {Math.abs(userLocation.lng).toFixed(2)}°W
-            </p>
-          </motion.div>
-        )}
+        {((filterMode === 'nearby' && userLocation) || (filterMode === 'nearby' && fireRisk)) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {filterMode === 'nearby' && userLocation && (
+              <motion.div 
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-blue-600 text-white px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2 w-fit"
+              >
+                <Navigation className="w-3 h-3 text-white fill-white shrink-0" />
+                <p className="text-[8px] font-black uppercase tracking-tight leading-none">
+                  A 50km de {userLocation.lat.toFixed(2)}°N, {Math.abs(userLocation.lng).toFixed(2)}°W
+                </p>
+              </motion.div>
+            )}
 
-        {filterMode === 'nearby' && fireRisk && (
-          <div className={cn(
-            "inline-flex self-start items-center gap-1.5 pl-2 pr-3 py-1.5 rounded-full border",
-            fireRisk.rcm >= 5 ? "bg-red-50 border-red-200" :
-            fireRisk.rcm === 4 ? "bg-orange-50 border-orange-200" :
-            fireRisk.rcm === 3 ? "bg-amber-50 border-amber-200" :
-            "bg-emerald-50 border-emerald-200"
-          )}>
-            <span className="text-[11px] leading-none">🔥</span>
-            <span className={cn(
-              "text-[9px] font-black uppercase tracking-wide",
-              fireRisk.rcm >= 5 ? "text-red-600" :
-              fireRisk.rcm === 4 ? "text-orange-600" :
-              fireRisk.rcm === 3 ? "text-amber-600" :
-              "text-emerald-600"
-            )}>
-              Risco de Incêndio: <span className="text-slate-800">{fireRisk.riskLabel}</span>
-            </span>
+            {filterMode === 'nearby' && fireRisk && (
+              <div className={cn(
+                "inline-flex items-center gap-1.5 pl-2 pr-3 py-1.5 rounded-full border",
+                fireRisk.rcm >= 5 ? "bg-red-50 border-red-200" :
+                fireRisk.rcm === 4 ? "bg-orange-50 border-orange-200" :
+                fireRisk.rcm === 3 ? "bg-amber-50 border-amber-200" :
+                "bg-emerald-50 border-emerald-200"
+              )}>
+                <span className="text-[11px] leading-none">🔥</span>
+                <span className={cn(
+                  "text-[9px] font-black uppercase tracking-wide",
+                  fireRisk.rcm >= 5 ? "text-red-600" :
+                  fireRisk.rcm === 4 ? "text-orange-600" :
+                  fireRisk.rcm === 3 ? "text-amber-600" :
+                  "text-emerald-600"
+                )}>
+                  Risco de Incêndio: <span className="text-slate-800">{fireRisk.riskLabel}</span>
+                </span>
+              </div>
+            )}
           </div>
         )}
 
