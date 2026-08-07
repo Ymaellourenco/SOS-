@@ -778,7 +778,12 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
       );
 
       if (useAdvancedAI) {
-        const history = messages.slice(-4).map(m => ({
+        // Janela de contexto ainda mais generosa (40 mensagens, ~20 trocas) — numa
+        // emergência com muitas mensagens curtas e rápidas ("sim", distâncias,
+        // confirmações), uma janela pequena faz a IA "esquecer" o perigo já
+        // confirmado poucas trocas atrás e voltar a perguntar coisas já respondidas,
+        // o que é perigoso e confuso.
+        const history = messages.slice(-40).map(m => ({
           role: m.role,
           content: m.content
         }));
@@ -821,7 +826,10 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: [
-              ...messages.slice(-5).map(m => ({ 
+              // Mesma janela generosa (40 mensagens) que a via avançada, pelo mesmo
+              // motivo: não perder o contexto de perigo já confirmado numa conversa
+              // de emergência rápida.
+              ...messages.slice(-40).map(m => ({ 
                 role: m.role === 'assistant' ? 'model' : 'user', 
                 parts: [{ text: m.content }] 
               })),

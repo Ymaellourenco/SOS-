@@ -265,32 +265,40 @@ const REAL_FIRE_BY_CAPITAL: Record<string, { name: string; lat: number; lng: num
   "Évora": { name: "Bombeiros Voluntários de Évora (Avª. Bombeiros Voluntários)", lat: 38.5731, lng: -7.9042 }
 };
 
-function findNearestRealPolice(lat: number, lng: number): EmergencyPOI {
+/**
+ * Devolve a esquadra PSP real mais próxima -- ou null se não houver morada verificada
+ * para o distrito do utilizador. NUNCA inventa um ponto no centro da cidade: é
+ * preferível não mostrar nada a mostrar um local que pode não existir.
+ */
+function findNearestRealPolice(lat: number, lng: number): EmergencyPOI | null {
   const capital = findNearestDistrictCapital(lat, lng);
   const real = REAL_POLICE_BY_CAPITAL[capital.name];
+  if (!real) return null;
   return {
     id: "real-fallback-police",
-    name: real ? real.name : `PSP — Comando Distrital de ${capital.name}`,
+    name: real.name,
     type: "police",
-    location: real ? { lat: real.lat, lng: real.lng } : { lat: capital.lat, lng: capital.lng },
-    address: real
-      ? "Localização real verificada — se a pesquisa em tempo real falhou, confirme ligando 112."
-      : "Localização aproximada (centro da cidade, morada exata ainda não verificada) — confirme ligando 112.",
+    location: { lat: real.lat, lng: real.lng },
+    address: "Localização real verificada — se a pesquisa em tempo real falhou, confirme ligando 112.",
     isEstimate: false
   };
 }
 
-function findNearestRealFire(lat: number, lng: number): EmergencyPOI {
+/**
+ * Devolve o quartel de bombeiros real mais próximo -- ou null se não houver morada
+ * verificada para o distrito do utilizador. NUNCA inventa um ponto no centro da
+ * cidade: é preferível não mostrar nada a mostrar um local que pode não existir.
+ */
+function findNearestRealFire(lat: number, lng: number): EmergencyPOI | null {
   const capital = findNearestDistrictCapital(lat, lng);
   const real = REAL_FIRE_BY_CAPITAL[capital.name];
+  if (!real) return null;
   return {
     id: "real-fallback-fire",
-    name: real ? real.name : `Corpo de Bombeiros de ${capital.name}`,
+    name: real.name,
     type: "fire",
-    location: real ? { lat: real.lat, lng: real.lng } : { lat: capital.lat, lng: capital.lng },
-    address: real
-      ? "Localização real verificada — se a pesquisa em tempo real falhou, confirme ligando 112."
-      : "Localização aproximada (centro da cidade, morada exata ainda não verificada) — confirme ligando 112.",
+    location: { lat: real.lat, lng: real.lng },
+    address: "Localização real verificada — se a pesquisa em tempo real falhou, confirme ligando 112.",
     isEstimate: false
   };
 }
@@ -588,7 +596,7 @@ const REAL_MUNICIPALITIES: { concelho: string; name: string; lat: number; lng: n
   { concelho: "Viseu", name: "Câmara Municipal de Viseu", lat: 40.65792, lng: -7.91393 },
 ];
 
-function findNearestRealMunicipality(lat: number, lng: number): EmergencyPOI {
+function findNearestRealMunicipality(lat: number, lng: number): EmergencyPOI | null {
   if (REAL_MUNICIPALITIES.length > 0) {
     let nearest = REAL_MUNICIPALITIES[0];
     let nearestDist = calculateDistance(lat, lng, nearest.lat, nearest.lng);
@@ -600,29 +608,22 @@ function findNearestRealMunicipality(lat: number, lng: number): EmergencyPOI {
       }
     }
     // Só usa esta entrada se estiver razoavelmente perto (< 25km) -- caso contrário
-    // o concelho do utilizador provavelmente esta entre os 87 que falharam a
-    // geocodificação, é melhor cair na aproximação generica por capital de distrito.
+    // o concelho do utilizador provavelmente está entre os 24 que ainda não têm
+    // correspondência geocodificada, e é melhor não mostrar nada do que um ponto
+    // que pode não ser o concelho certo.
     if (nearestDist < 25) {
       return {
         id: "real-fallback-municipality-geocoded",
         name: nearest.name,
         type: "municipality",
         location: { lat: nearest.lat, lng: nearest.lng },
-        address: "Localização real (geocodificada a partir da morada oficial da camara) -- confirme ligando 112.",
+        address: "Localização real (geocodificada a partir da morada oficial da câmara) — confirme ligando 112.",
         isEstimate: false
       };
     }
   }
 
-  const capital = findNearestDistrictCapital(lat, lng);
-  return {
-    id: "real-fallback-municipality",
-    name: `Câmara Municipal de ${capital.name}`,
-    type: "municipality",
-    location: { lat: capital.lat, lng: capital.lng },
-    address: "Localização aproximada -- pode não ser o concelho exato do utilizador, confirme ligando 112 ou pesquisando a camara local.",
-    isEstimate: false
-  };
+  return null;
 }
 
 /**
@@ -693,7 +694,7 @@ const REAL_HEALTH_CENTERS_LVT: { concelho: string; name: string; lat: number; ln
  * mais próximo) na lista verificada da ARS LVT; so cai na aproximação por capital de
  * distrito se estiver fora dessa cobertura (ex: Norte, Centro-interior, Alentejo, Algarve).
  */
-function findNearestRealHealthCenter(lat: number, lng: number): EmergencyPOI {
+function findNearestRealHealthCenter(lat: number, lng: number): EmergencyPOI | null {
   if (REAL_HEALTH_CENTERS_LVT.length > 0) {
     let nearest = REAL_HEALTH_CENTERS_LVT[0];
     let nearestDist = calculateDistance(lat, lng, nearest.lat, nearest.lng);
@@ -704,41 +705,36 @@ function findNearestRealHealthCenter(lat: number, lng: number): EmergencyPOI {
         nearestDist = d;
       }
     }
-    // So usa está entrada se estiver razoavelmente perto (< 40km) -- caso contrário o
-    // utilizador está fora da região coberta pela ARS LVT, é melhor cair na
-    // aproximação generica por capital de distrito do que devolver um concelho de
-    // Lisboa/Santarém a alguém que está no Algarve ou no Minho.
+    // Só usa esta entrada se estiver razoavelmente perto (< 40km) -- caso contrário o
+    // utilizador está fora da região coberta pela ARS LVT, e é melhor não mostrar
+    // nada do que devolver um concelho de Lisboa/Santarém a alguém no Algarve ou no
+    // Minho.
     if (nearestDist < 40) {
       return {
         id: "real-fallback-health-center-lvt",
         name: nearest.name,
         type: "health_center",
         location: { lat: nearest.lat, lng: nearest.lng },
-        address: "Localização real verificada (ARS Lisboa e Vale do Tejo) -- confirme ligando SNS 24 (808 24 24 24) ou 112.",
+        address: "Localização real verificada (ARS Lisboa e Vale do Tejo) — confirme ligando SNS 24 (808 24 24 24) ou 112.",
         isEstimate: false
       };
     }
   }
 
-  const capital = findNearestDistrictCapital(lat, lng);
-  return {
-    id: "real-fallback-health-center",
-    name: `Centro de Saúde de ${capital.name}`,
-    type: "health_center",
-    location: { lat: capital.lat, lng: capital.lng },
-    address: "Localização aproximada -- pode nao ser o centro de saúde do seu concelho, confirme ligando SNS 24 (808 24 24 24) ou 112.",
-    isEstimate: false
-  };
+  return null;
 }
 
 function getOfflineFallbackPOIs(lat: number, lng: number): EmergencyPOI[] {
-  logger.warn(`[EmergencyService] Sem dados reais disponíveis para [${lat}, ${lng}] — a usar hospital, esquadra, bombeiros, câmara e centro de saúde reais mais próximos da lista curada, e estimativas não confirmadas para os restantes tipos.`);
+  logger.warn(`[EmergencyService] Sem dados reais disponíveis para [${lat}, ${lng}] — a usar apenas os locais reais e verificados que existirem na lista curada para esta zona (hospital, esquadra, bombeiros, câmara, centro de saúde); tipos sem correspondência real verificada ficam de fora, em vez de mostrar uma aproximação inventada.`);
 
   // IMPORTANTE: as entradas de posto de saúde/social abaixo continuam a ser apenas uma
   // direção aproximada relativa à localização do utilizador, geradas localmente — NÃO
   // são locais reais verificados. Os nomes deixam isso claro de propósito, para nunca
-  // dar a entender que é um resultado confirmado.
-  const fallbackPOIs: EmergencyPOI[] = [
+  // dar a entender que é um resultado confirmado. Os restantes tipos (hospital, polícia,
+  // bombeiros, câmara, centro de saúde) só aparecem se houver mesmo um local real
+  // verificado perto — caso contrário ficam de fora da lista, para nunca mostrar
+  // uma localização que pode não existir.
+  const fallbackPOIs: (EmergencyPOI | null)[] = [
     findNearestRealHospital(lat, lng),
     findNearestRealPolice(lat, lng),
     findNearestRealFire(lat, lng),
@@ -770,6 +766,6 @@ function getOfflineFallbackPOIs(lat: number, lng: number): EmergencyPOI[] {
     }
   ];
 
-  return fallbackPOIs;
+  return fallbackPOIs.filter((p): p is EmergencyPOI => p !== null);
 }
 
