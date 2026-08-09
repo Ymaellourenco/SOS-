@@ -1296,35 +1296,22 @@ async function startServer() {
   ];
   let poiCircuitBreakerUntil = 0;
 
-  function mapOsmToAppType(tags: any): string | null {
-    const amenity = tags.amenity || '';
-    const healthcare = tags.healthcare || '';
-    const social = tags.social_facility || '';
-    const shop = tags.shop || '';
-    const beauty = tags.shop === 'beauty' || tags.shop === 'hairdresser' || tags.beauty || '';
-    const name = (tags.name || '').toLowerCase();
-
-    // EXCLUSÃO CRÍTICA: clínicas/lojas veterinárias e de animais são por vezes mal
-    // classificadas nos dados livres do OpenStreetMap (ex: com amenity=clinic sem
-    // distinção). Nunca podem aparecer como hospital/centro de saúde humano.
+  /**
+   * Nomes que NUNCA devem aparecer como hospital/centro de saúde/clínica, mesmo que
+   * a categoria (OSM ou TomTom) diga que sim — fontes de dados livres/comerciais por
+   * vezes classificam mal cabeleireiros, clínicas veterinárias, etc. Extraído para
+   * função própria para que a mesma lista de segurança sirva tanto os resultados da
+   * Overpass como os do TomTom, em vez de duplicar (e arriscar desatualizar só um).
+   */
+  function isNameExcluded(rawName: string): boolean {
+    const name = (rawName || '').toLowerCase();
     if (
-      amenity === 'veterinary' || healthcare === 'veterinary' || shop === 'pet' ||
       name.includes('veterinár') || name.includes('veterinar') ||
       name.includes('animal') || name.includes('pet shop') || name.includes('petshop')
     ) {
-      return null;
+      return true;
     }
-
-    // EXCLUSÃO CRÍTICA: cabeleireiros, barbearias, clínicas de estética e salões de
-    // beleza aparecem por vezes mal classificados no OSM com amenity=clinic ou
-    // healthcare=clinic (ex: "Clínica de Estética X"), sem a etiqueta "shop" que os
-    // excluiria pela regra abaixo. Nunca podem aparecer como centro de saúde real —
-    // já aconteceu indicarem um cabeleireiro em vez de um hospital numa emergência.
-    // Inclui termos em inglês porque alguns estabelecimentos em Portugal usam nomes
-    // comerciais em inglês (ex: "Hair and Grooming Parlour"), que escapavam ao filtro
-    // anterior por só ter palavras em português.
     if (
-      beauty || amenity === 'hairdresser' ||
       name.includes('cabeleireir') || name.includes('barbearia') || name.includes('barbeiro') ||
       name.includes('salão de beleza') || name.includes('salao de beleza') ||
       name.includes('estética') || name.includes('estetica') ||
@@ -1335,6 +1322,23 @@ async function startServer() {
       name.includes('barber') || name.includes('waxing') || name.includes('lash') ||
       name.includes('brow') || name.includes('cosmetic') || name.includes('esthetic')
     ) {
+      return true;
+    }
+    return false;
+  }
+
+  function mapOsmToAppType(tags: any): string | null {
+    const amenity = tags.amenity || '';
+    const healthcare = tags.healthcare || '';
+    const social = tags.social_facility || '';
+    const shop = tags.shop || '';
+    const beauty = tags.shop === 'beauty' || tags.shop === 'hairdresser' || tags.beauty || '';
+    const name = (tags.name || '').toLowerCase();
+
+    // EXCLUSÃO CRÍTICA (ver isNameExcluded acima): clínicas veterinárias, cabeleireiros,
+    // etc., mal classificadas no OSM nunca podem aparecer como hospital/centro de saúde
+    // humano — já aconteceu indicarem um cabeleireiro em vez de um hospital numa emergência.
+    if (amenity === 'veterinary' || healthcare === 'veterinary' || shop === 'pet' || beauty || amenity === 'hairdresser' || isNameExcluded(name)) {
       return null;
     }
 
@@ -1401,6 +1405,78 @@ async function startServer() {
       'affidea', 'joaquim chaves', 'luz saúde', 'luz saude'
     ];
     return privateChains.some(chain => name.includes(chain) || operator.includes(chain));
+  }
+
+  // === PESQUISA TOMTOM (substitui a Overpass como fonte principal) ===
+  // Decisão (Ago 2026): a Overpass/OpenStreetMap é gratuita mas pouco fiável —
+  // mostrou-se instável (o mesmo pedido pode falhar de um momento para o outro) e
+  // com dados por vezes desatualizados (ex: um quartel de bombeiros que se mudou em
+  // 2019 e o OSM nunca foi atualizado). O TomTom é uma base de dados mantida
+  // profissionalmente, com tier gratuito generoso (2500 pedidos/dia, sem cartão de
+  // crédito). Fica como fonte PRINCIPAL; a Overpass mantém-se como rede de segurança
+  // caso o TomTom falhe ou a chave não esteja configurada (ver função abaixo).
+  const TOMTOM_CATEGORY_SET = 'HOSPITAL_POLYCLINIC,HEALTH_CARE_SERVICE,POLICE_STATION,FIRE_STATION_BRIGADE,GOVERNMENT_OFFICE';
+
+  function mapTomTomCategoryToAppType(categorySet: string[], name: string): string | null {
+    if (isNameExcluded(name)) return null;
+    const nameLower = (name || '').toLowerCase();
+    const has = (code: string) => categorySet.includes(code);
+
+    if (has('POLICE_STATION')) return 'police';
+    if (has('FIRE_STATION_BRIGADE')) return 'fire';
+    if (has('GOVERNMENT_OFFICE')) return 'municipality';
+    if (has('HOSPITAL_POLYCLINIC') || has('HEALTH_CARE_SERVICE')) {
+      if (nameLower.includes('centro de saúde') || nameLower.includes('centro de saude') || nameLower.includes('unidade de saúde') || nameLower.includes('unidade de saude') || nameLower.includes('usf') || nameLower.includes('clínica') || nameLower.includes('clinica')) {
+        return 'health_center';
+      }
+      return 'hospital';
+    }
+    return null;
+  }
+
+  async function queryTomTom(lat: number, lng: number, radiusKm: number): Promise<any[] | null> {
+    const apiKey = process.env.TOMTOM_API_KEY;
+    if (!apiKey) return null; // sem chave configurada — deixa cair para a Overpass, sem erro
+
+    const radiusMeters = Math.round(radiusKm * 1000);
+    const url = `https://api.tomtom.com/search/2/nearbySearch/.json?key=${encodeURIComponent(apiKey)}&lat=${lat}&lon=${lng}&radius=${radiusMeters}&categorySet=${TOMTOM_CATEGORY_SET}&limit=100&language=pt-PT`;
+
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(9000) });
+      if (!response.ok) {
+        console.warn(`[TomTom] Resposta ${response.status} — a cair para a Overpass.`);
+        return null;
+      }
+      const data = await response.json();
+      if (!Array.isArray(data.results)) return null;
+
+      return data.results.map((r: any) => {
+        const name = r.poi?.name || null;
+        const categorySet: string[] = (r.poi?.classifications || []).flatMap((c: any) => c.code ? [c.code] : []);
+        // Fallback: algumas respostas trazem os códigos diretamente em categorySet do poi
+        const rawCodes: string[] = categorySet.length > 0 ? categorySet : (r.poi?.categorySet || []).map((c: any) => c.id?.toString?.() ?? '');
+        const type = mapTomTomCategoryToAppType(rawCodes.length > 0 ? rawCodes : (r.poi?.categories || []), name || '');
+        if (type === null) return null;
+        const elementLat = r.position?.lat;
+        const elementLng = r.position?.lon;
+        if (!elementLat || !elementLng) return null;
+
+        const addr = r.address || {};
+        const addressParts = [addr.streetName, addr.streetNumber, addr.municipality || addr.municipalitySubdivision].filter(Boolean);
+
+        return {
+          id: `tomtom-${r.id}`,
+          name,
+          type,
+          location: { lat: elementLat, lng: elementLng },
+          address: addressParts.length > 0 ? addressParts.join(', ') : (addr.freeformAddress || undefined),
+          isPrivate: type === 'hospital' ? isPrivateHospital({ name }) : undefined
+        };
+      }).filter((item: any) => item !== null);
+    } catch (error) {
+      console.warn('[TomTom] Pedido falhou — a cair para a Overpass:', error);
+      return null;
+    }
   }
 
   // === VERIFICAÇÃO DE ROTA SEGURA ===
@@ -1539,6 +1615,13 @@ async function startServer() {
       return res.status(400).json({ error: "lat e lng são obrigatórios." });
     }
 
+    // TomTom primeiro (fonte principal — ver nota acima de queryTomTom). Só cai para
+    // a Overpass se não houver chave configurada, ou se o pedido ao TomTom falhar.
+    const tomtomResults = await queryTomTom(lat, lng, radiusKm);
+    if (tomtomResults !== null) {
+      return res.json({ elements: tomtomResults, source: 'tomtom' });
+    }
+
     if (Date.now() < poiCircuitBreakerUntil) {
       return res.json({ elements: [], circuitBreakerActive: true });
     }
@@ -1593,7 +1676,7 @@ async function startServer() {
         };
       }).filter((item: any) => item !== null);
 
-      res.json({ elements: results });
+      res.json({ elements: results, source: 'overpass' });
     } catch (error) {
       console.warn("[EmergencyPOIs] Todos os espelhos Overpass falharam:", error);
       // Cooldown mais curto (45s, não 3min) — uma falha transitória não devia deixar-nos
