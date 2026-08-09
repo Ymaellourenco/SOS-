@@ -423,7 +423,7 @@ export const callDatabricksAI = async (query: string, history: any[] = [], syste
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         messages: [
-          { role: 'system', content: `Você é um assistente de emergência avançado.${systemContext ? `\n\n${systemContext}` : ''}` },
+          { role: 'system', content: `Você é um assistente de emergência avançado. Nunca use travessões (—, –, -) para ligar ideias ou fazer pausas — use frases curtas ou vírgulas em vez disso.${systemContext ? `\n\n${systemContext}` : ''}` },
           ...history,
           { role: 'user', content: query }
         ] 
