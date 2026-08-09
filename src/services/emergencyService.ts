@@ -273,7 +273,17 @@ const REAL_POLICE_BY_CAPITAL: Record<string, { name: string; lat: number; lng: n
   "Vila Real": { name: "PSP — Comando Distrital de Vila Real (EN2, Almodena)", lat: 41.295372, lng: -7.755435 }
 };
 const REAL_FIRE_BY_CAPITAL: Record<string, { name: string; lat: number; lng: number }> = {
-  "Viseu": { name: "Bombeiros Municipais de Viseu (Praça D. João I)", lat: 40.6614, lng: -7.9101 },
+  // Coordenada corrigida (Ago 2026): o quartel dos Bombeiros Sapadores de Viseu
+  // MUDOU-SE em 2019 para a Avenida do Aeródromo, em Lordosa (~7km do centro,
+  // junto ao Aeródromo Municipal Gonçalves Lobato) — mas nem esta lista curada
+  // nem a pesquisa Overpass em tempo real (que ainda aponta para a morada antiga,
+  // Praça D. João I / perto do centro) refletem essa mudança. Ou seja: mesmo a
+  // fonte "ao vivo" pode estar desatualizada, não só a lista estática. Coordenada
+  // abaixo é uma aproximação da zona do aeródromo — vale a pena confirmar no
+  // terreno antes de confiar cegamente, tal como as outras entradas revistas.
+  // NOTA para o verify-curated-locations.mjs: isto vai aparecer como "REVER" por
+  // estar a >5km do centro da cidade — é esperado e correto, não é um erro novo.
+  "Viseu": { name: "Bombeiros Sapadores de Viseu (Av. do Aeródromo, Lordosa)", lat: 40.7256, lng: -7.8892 },
   "Lisboa": { name: "Regimento de Sapadores Bombeiros de Lisboa (Av. Dom Carlos I)", lat: 38.7083, lng: -9.1556 },
   "Porto": { name: "Regimento de Sapadores Bombeiros do Porto (Rua da Constituição)", lat: 41.1580, lng: -8.6180 },
   "Braga": { name: "Bombeiros Voluntários de Braga (Largo Paulo Orósio)", lat: 41.5478, lng: -8.4213 },
