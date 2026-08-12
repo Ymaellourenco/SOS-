@@ -282,16 +282,27 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
 
         {/* Real Emergency POIs (OSM) */}
         {poiData.map(poi => {
-          const typeKey = (poi.type + (poi.type.endsWith('s') ? '' : 's')) as keyof typeof activeLayers;
-          const layerKey = poi.type === 'health_center' ? 'health_centers' : 
-                          poi.type === 'health_post' ? 'health_posts' :
-                          poi.type === 'municipality' ? 'municipalities' : 
-                          poi.type === 'shelter' ? 'shelters' :
-                          poi.type === 'social' ? 'social' :
-                          poi.type === 'pharmacy' ? 'pharmacies' :
-                          typeKey;
-                          
-          if (!activeLayers[layerKey as keyof typeof activeLayers]) return null;
+          // Mapeamento explícito, um-para-um, de cada tipo de local para a sua
+          // camada correspondente em activeLayers. Antes disto era calculado a
+          // adivinhar o plural (ex: "police" + "s" = "polices"), o que não batia
+          // certo com a chave real "police" em activeLayers — e por isso os
+          // marcadores de polícia, bombeiros e SOS nunca apareciam no mapa,
+          // mesmo quando os dados chegavam corretos do servidor.
+          const LAYER_KEY_BY_TYPE: Record<EmergencyPOI['type'], keyof typeof activeLayers> = {
+            hospital: 'hospitals',
+            health_center: 'health_centers',
+            health_post: 'health_posts',
+            police: 'police',
+            fire: 'fire',
+            municipality: 'municipalities',
+            pharmacy: 'pharmacies',
+            sos: 'sos',
+            shelter: 'shelters',
+            social: 'social'
+          };
+          const layerKey = LAYER_KEY_BY_TYPE[poi.type];
+
+          if (!layerKey || !activeLayers[layerKey]) return null;
           
           return (
             <Marker 
