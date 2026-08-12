@@ -1368,6 +1368,7 @@ async function startServer() {
     }
     if (amenity === 'police') return 'police';
     if (amenity === 'fire_station') return 'fire';
+    if (amenity === 'pharmacy') return 'pharmacy';
     if (amenity === 'clinic' || healthcare === 'clinic' || amenity === 'health_centre' || name.includes('centro de saúde') || name.includes('unidade de saúde') || name.includes('centro de saude')) {
       return 'health_center';
     }
@@ -1415,7 +1416,7 @@ async function startServer() {
   // profissionalmente, com tier gratuito generoso (2500 pedidos/dia, sem cartão de
   // crédito). Fica como fonte PRINCIPAL; a Overpass mantém-se como rede de segurança
   // caso o TomTom falhe ou a chave não esteja configurada (ver função abaixo).
-  const TOMTOM_CATEGORY_SET = 'HOSPITAL_POLYCLINIC,HEALTH_CARE_SERVICE,POLICE_STATION,FIRE_STATION_BRIGADE,GOVERNMENT_OFFICE';
+  const TOMTOM_CATEGORY_SET = 'HOSPITAL_POLYCLINIC,HEALTH_CARE_SERVICE,POLICE_STATION,FIRE_STATION_BRIGADE,GOVERNMENT_OFFICE,PHARMACY';
 
   function mapTomTomCategoryToAppType(categorySet: string[], name: string): string | null {
     if (isNameExcluded(name)) return null;
@@ -1425,6 +1426,7 @@ async function startServer() {
     if (has('POLICE_STATION')) return 'police';
     if (has('FIRE_STATION_BRIGADE')) return 'fire';
     if (has('GOVERNMENT_OFFICE')) return 'municipality';
+    if (has('PHARMACY')) return 'pharmacy';
     if (has('HOSPITAL_POLYCLINIC') || has('HEALTH_CARE_SERVICE')) {
       if (nameLower.includes('centro de saúde') || nameLower.includes('centro de saude') || nameLower.includes('unidade de saúde') || nameLower.includes('unidade de saude') || nameLower.includes('usf') || nameLower.includes('clínica') || nameLower.includes('clinica')) {
         return 'health_center';
@@ -1438,7 +1440,11 @@ async function startServer() {
     const apiKey = process.env.TOMTOM_API_KEY;
     if (!apiKey) return null; // sem chave configurada — deixa cair para a Overpass, sem erro
 
-    const radiusMeters = Math.round(radiusKm * 1000);
+    // O TomTom recusa raios muito grandes (máximo documentado: 50km) — limitamos aqui
+    // para nunca enviar um valor inválido, mesmo que o pedido vindo do mapa peça mais
+    // (ex: vista "Nacional" bem afastada), evitando um erro que faria cair para a Overpass
+    // desnecessariamente.
+    const radiusMeters = Math.round(Math.min(radiusKm, 50) * 1000);
     const url = `https://api.tomtom.com/search/2/nearbySearch/.json?key=${encodeURIComponent(apiKey)}&lat=${lat}&lon=${lng}&radius=${radiusMeters}&categorySet=${TOMTOM_CATEGORY_SET}&limit=100&language=pt-PT`;
 
     try {
@@ -1630,8 +1636,8 @@ async function startServer() {
     const query = `
       [out:json][timeout:20];
       (
-        node["amenity"~"hospital|police|fire_station|clinic|doctors|townhall"](around:${radiusMeters},${lat},${lng});
-        way["amenity"~"hospital|police|fire_station|clinic|doctors|townhall"](around:${radiusMeters},${lat},${lng});
+        node["amenity"~"hospital|police|fire_station|clinic|doctors|townhall|pharmacy"](around:${radiusMeters},${lat},${lng});
+        way["amenity"~"hospital|police|fire_station|clinic|doctors|townhall|pharmacy"](around:${radiusMeters},${lat},${lng});
         node["office"="government"](around:${radiusMeters},${lat},${lng});
         way["office"="government"](around:${radiusMeters},${lat},${lng});
         node["emergency"="government"](around:${radiusMeters},${lat},${lng});

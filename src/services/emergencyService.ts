@@ -7,7 +7,7 @@ import { calculateDistance } from '../lib/utils';
 export interface EmergencyPOI {
   id: string;
   name: string;
-  type: 'hospital' | 'health_center' | 'health_post' | 'police' | 'fire' | 'municipality' | 'sos' | 'shelter' | 'social';
+  type: 'hospital' | 'health_center' | 'health_post' | 'police' | 'fire' | 'municipality' | 'sos' | 'shelter' | 'social' | 'pharmacy';
   location: { lat: number; lng: number };
   address?: string;
   /** true quando não há dados reais confirmados — é uma posição aproximada, não um local verificado. */
@@ -78,6 +78,7 @@ async function fetchNearbyEmergencyPOIsAtRadius(lat: number, lng: number, radius
         el.type === 'health_post' ? 'Posto de Saúde' :
         el.type === 'municipality' ? 'Instituição Local' :
         el.type === 'social' ? 'Apoio Social / Lar' :
+        el.type === 'pharmacy' ? 'Farmácia' :
         'Ponto de Emergência'
       )
     }));
