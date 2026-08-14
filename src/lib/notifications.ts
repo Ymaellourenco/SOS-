@@ -1,4 +1,5 @@
 import { getToken, onMessage } from 'firebase/messaging';
+import { signInAnonymously } from 'firebase/auth';
 import { getMessagingSafe, auth } from './firebase';
 import { soundService } from './soundService';
 import { logger } from './logger';
@@ -41,13 +42,25 @@ export async function getFCMToken() {
     if (token) {
       localStorage.setItem('fcm_token', token);
       logger.log('FCM Token:', token);
-      // Auto-register with backend if possible
-      if (auth.currentUser) {
-        const uid = auth.currentUser.uid;
+      // Registar o dispositivo para receber avisos de perigo perto não devia exigir
+      // conta nenhuma — ser avisado de um incêndio próximo é segurança básica, não
+      // uma funcionalidade "premium". Se a pessoa não tem sessão iniciada a sério,
+      // inicia sessão anónima (sem pedir nada à pessoa, sem dados pessoais) só para
+      // termos um identificador válido a que associar o token e a localização.
+      let uid = auth.currentUser?.uid;
+      if (!uid) {
+        try {
+          const anonUser = await signInAnonymously(auth);
+          uid = anonUser.user.uid;
+        } catch (e) {
+          logger.error('Falha ao iniciar sessão anónima para notificações:', e);
+        }
+      }
+      if (uid) {
         if ('geolocation' in navigator) {
           navigator.geolocation.getCurrentPosition(
-            (position) => registerTokenWithBackend(uid, token, position.coords.latitude, position.coords.longitude),
-            () => registerTokenWithBackend(uid, token),
+            (position) => registerTokenWithBackend(uid!, token, position.coords.latitude, position.coords.longitude),
+            () => registerTokenWithBackend(uid!, token),
             { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
           );
         } else {

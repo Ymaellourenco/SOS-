@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Alert } from '../../types';
-import { Flame, HeartPulse, ShieldCheck, Stethoscope, MapPin, Landmark, LifeBuoy, Loader2, Pill } from 'lucide-react';
+import { Flame, HeartPulse, ShieldCheck, Stethoscope, MapPin, Landmark, LifeBuoy, Loader2, Pill, Building2, Search } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { fetchNearbyEmergencyPOIs, EmergencyPOI } from '../../services/emergencyService';
 import { logger } from '../../lib/logger';
@@ -25,13 +25,14 @@ const POI_SVGS = {
   police: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>',
   fire: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.203 1.15-3.003L8.5 14.5Z"/></svg>',
   municipality: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="12" x="2" y="10" rx="2"/><path d="M6 10V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6"/><path d="M12 10V2"/><path d="M6 14h.01"/><path d="M10 14h.01"/><path d="M14 14h.01"/><path d="M18 14h.01"/></svg>',
-  pharmacy: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>',
+  pharmacy: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+  parish_council: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4 8 4v14"/><path d="M9 21v-6h6v6"/></svg>',
   sos: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>',
   shelter: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"/><path d="m3 9 2.45-4.91A2 2 0 0 1 7.23 3h9.54a2 2 0 0 1 1.78 1.09L21 9"/></svg>',
   social: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
 };
 
-function MapController({ center, zoom, onMoveEnd }: { center: [number, number], zoom: number, onMoveEnd?: (lat: number, lng: number, radiusKm: number) => void }) {
+function MapController({ center, zoom, onMoveEnd, onMapClick }: { center: [number, number], zoom: number, onMoveEnd?: (lat: number, lng: number) => void, onMapClick?: (lat: number, lng: number) => void }) {
   const map = useMap();
   
   useEffect(() => {
@@ -41,22 +42,15 @@ function MapController({ center, zoom, onMoveEnd }: { center: [number, number], 
     });
   }, [center, zoom, map]);
 
-  // Calcula um raio de pesquisa que corresponde ao que está mesmo visível no ecrã —
-  // em vez de um raio fixo (que deixava a maior parte do mapa "Nacional" sem
-  // nenhuma bolinha, porque 10km é praticamente invisível à escala do país inteiro).
-  const boundsRadiusKm = useCallback(() => {
-    const bounds = map.getBounds();
-    const center = map.getCenter();
-    const corner = bounds.getNorthEast();
-    const distMeters = center.distanceTo(corner);
-    const radiusKm = distMeters / 1000;
-    return Math.min(Math.max(radiusKm, 3), 60); // entre 3km e 60km (limite também aplicado no servidor)
-  }, [map]);
-
   useMapEvents({
     moveend: () => {
       const newCenter = map.getCenter();
-      if (onMoveEnd) onMoveEnd(newCenter.lat, newCenter.lng, boundsRadiusKm());
+      if (onMoveEnd) onMoveEnd(newCenter.lat, newCenter.lng);
+    },
+    // Permite à pessoa escolher ela própria um destino em qualquer ponto do mapa,
+    // em vez de estar limitada aos pontos que a app já conhece.
+    click: (e: any) => {
+      if (onMapClick) onMapClick(e.latlng.lat, e.latlng.lng);
     }
   });
 
@@ -101,23 +95,42 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
     fire: true,
     municipalities: true,
     pharmacies: true,
+    parish_councils: true,
     sos: true,
     shelters: true,
     social: true
   });
   const [showNearestPoints, setShowNearestPoints] = useState(false);
+  // Destino escolhido pela própria pessoa, tocando em qualquer ponto do mapa.
+  const [customDestination, setCustomDestination] = useState<{ lat: number; lng: number } | null>(null);
+  // Pesquisa dentro do mapa (estilo Ctrl+F): filtra os pontos já carregados pelo
+  // nome, e ordena pelos mais próximos da pessoa.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number>(() => {
     return parseInt(localStorage.getItem('sos_radar_last_updated') || '0');
   });
 
+  // Quando a pessoa escolhe um resultado da pesquisa, o mapa foca nesse ponto —
+  // esta sobreposição tem prioridade sobre o centro normal (perto de mim/nacional)
+  // até ela mudar de aba ou fazer nova pesquisa.
+  const [focusOverride, setFocusOverride] = useState<{ lat: number; lng: number } | null>(null);
+
   const center: [number, number] = useMemo(() => {
+    if (focusOverride) return [focusOverride.lat, focusOverride.lng];
     // Nacional mostra sempre Portugal inteiro, independentemente de teres GPS ligado —
     // é isso que distingue visualmente de "Perto de Mim", que foca sempre em ti.
     if (viewScope === 'nearby' && userLocation) return [userLocation.lat, userLocation.lng];
     return [39.5, -8.0]; // Centro de Portugal
-  }, [userLocation, viewScope]);
+  }, [userLocation, viewScope, focusOverride]);
 
-  const zoom = viewScope === 'nearby' && userLocation ? 13 : 7;
+  const zoom = focusOverride ? 16 : (viewScope === 'nearby' && userLocation ? 13 : 7);
+
+  // Ao mudar entre "Perto de Mim" e "Nacional", limpa o foco da pesquisa, para a
+  // aba escolhida voltar a mandar no que é mostrado.
+  useEffect(() => {
+    setFocusOverride(null);
+  }, [viewScope]);
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -162,16 +175,55 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
       .slice(0, 10);
   }, [userLocation, poiData, calculateDistance]);
 
+  /**
+   * Resultados da pesquisa no mapa — funciona como um Ctrl+F: filtra os pontos já
+   * carregados cujo nome (ou tipo) corresponda ao que a pessoa escreveu, e ordena
+   * pelos mais próximos dela, para o primeiro resultado ser sempre o mais útil.
+   */
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length < 2) return [];
+
+    const typeLabels: Record<string, string> = {
+      hospital: 'hospital',
+      health_center: 'centro de saúde',
+      health_post: 'posto de saúde',
+      police: 'polícia esquadra',
+      fire: 'bombeiros',
+      municipality: 'câmara municipal',
+      pharmacy: 'farmácia',
+      parish_council: 'junta de freguesia',
+      shelter: 'abrigo',
+      social: 'apoio social'
+    };
+
+    return poiData
+      .filter(poi => {
+        const name = (poi.name || '').toLowerCase();
+        const typeLabel = typeLabels[poi.type] || '';
+        return name.includes(q) || typeLabel.includes(q);
+      })
+      .map(poi => ({
+        ...poi,
+        distance: userLocation
+          ? calculateDistance(userLocation.lat, userLocation.lng, poi.location.lat, poi.location.lng)
+          : 0
+      }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 8);
+  }, [searchQuery, poiData, userLocation, calculateDistance]);
+
   const openInGoogleMaps = (lat: number, lng: number, label: string) => {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
     window.open(url, '_blank');
   };
 
-  const loadPois = useCallback(async (lat: number, lng: number, radiusKm: number = 10) => {
+  const loadPois = useCallback(async (lat: number, lng: number) => {
     if (isOffline) return;
     setIsLoadingPois(true);
     try {
-      const newPois = await fetchNearbyEmergencyPOIs(lat, lng, radiusKm);
+      const radius = 10; // 10km radius from current view
+      const newPois = await fetchNearbyEmergencyPOIs(lat, lng, radius);
       setPoiData(prev => {
         const existingIds = new Set(prev.map(p => p.id));
         const uniqueNewPois = Array.from(new Map(newPois.map(item => [item.id, item])).values());
@@ -189,23 +241,20 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
     if (userLocation) {
       if (!lastPoisLocation) {
         setLastPoisLocation(userLocation);
-        // Raio inicial maior na vista "Nacional" (zoom bem afastado), pequeno na
-        // vista "Perto de Mim" — evita andar a pedir 60km de raio quando já se está
-        // com o zoom no bairro, e vice-versa.
-        loadPois(userLocation.lat, userLocation.lng, viewScope === 'all' ? 60 : 10);
+        loadPois(userLocation.lat, userLocation.lng);
       } else {
         const dist = calculateDistance(userLocation.lat, userLocation.lng, lastPoisLocation.lat, lastPoisLocation.lng);
         // Only reload if user moved more than 2km
         if (dist > 2) {
           setLastPoisLocation(userLocation);
-          loadPois(userLocation.lat, userLocation.lng, viewScope === 'all' ? 60 : 10);
+          loadPois(userLocation.lat, userLocation.lng);
         }
       }
     } else if (center) {
       // Fallback for when we don't have user location but have a map center
-      loadPois(center[0], center[1], viewScope === 'all' ? 60 : 10);
+      loadPois(center[0], center[1]);
     }
-  }, [userLocation, center, lastPoisLocation, loadPois, calculateDistance, viewScope]);
+  }, [userLocation, center, lastPoisLocation, loadPois, calculateDistance]);
 
   return (
     <div className="relative h-[390px] w-full rounded-[32px] overflow-hidden border border-slate-200 shadow-inner group z-0">
@@ -225,11 +274,51 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
         <MapController 
           center={center} 
           zoom={zoom} 
-          onMoveEnd={(lat, lng, radiusKm) => loadPois(lat, lng, radiusKm)}
+          onMoveEnd={(lat, lng) => loadPois(lat, lng)}
+          onMapClick={(lat, lng) => setCustomDestination({ lat, lng })}
         />
 
         {userLocation && (
           <Marker position={[userLocation.lat, userLocation.lng]} icon={createUserIcon()} />
+        )}
+
+        {/* Destino escolhido pela pessoa, tocando no mapa */}
+        {customDestination && (
+          <Marker
+            position={[customDestination.lat, customDestination.lng]}
+            icon={L.divIcon({
+              className: 'custom-destination-icon',
+              html: `
+                <div class="w-5 h-5 rounded-full bg-red-600 border-2 border-white shadow-lg flex items-center justify-center text-white">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                </div>
+              `,
+              iconSize: [20, 20],
+              iconAnchor: [10, 20],
+              popupAnchor: [0, -20]
+            })}
+          >
+            <Popup className="custom-popup">
+              <div className="p-2 text-center text-slate-900">
+                <h4 className="text-[11px] font-black uppercase leading-tight">Destino escolhido por si</h4>
+                <p className="text-[8px] font-bold text-slate-400 mt-1">
+                  {customDestination.lat.toFixed(5)}, {customDestination.lng.toFixed(5)}
+                </p>
+                <button
+                  onClick={() => openInGoogleMaps(customDestination.lat, customDestination.lng, 'Destino')}
+                  className="mt-2 w-full py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest"
+                >
+                  Ver Direções
+                </button>
+                <button
+                  onClick={() => setCustomDestination(null)}
+                  className="mt-1.5 w-full py-1.5 text-slate-400 text-[8px] font-bold uppercase tracking-widest"
+                >
+                  Remover marcador
+                </button>
+              </div>
+            </Popup>
+          </Marker>
         )}
 
         {/* Dynamic Alerts */}
@@ -282,27 +371,17 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
 
         {/* Real Emergency POIs (OSM) */}
         {poiData.map(poi => {
-          // Mapeamento explícito, um-para-um, de cada tipo de local para a sua
-          // camada correspondente em activeLayers. Antes disto era calculado a
-          // adivinhar o plural (ex: "police" + "s" = "polices"), o que não batia
-          // certo com a chave real "police" em activeLayers — e por isso os
-          // marcadores de polícia, bombeiros e SOS nunca apareciam no mapa,
-          // mesmo quando os dados chegavam corretos do servidor.
-          const LAYER_KEY_BY_TYPE: Record<EmergencyPOI['type'], keyof typeof activeLayers> = {
-            hospital: 'hospitals',
-            health_center: 'health_centers',
-            health_post: 'health_posts',
-            police: 'police',
-            fire: 'fire',
-            municipality: 'municipalities',
-            pharmacy: 'pharmacies',
-            sos: 'sos',
-            shelter: 'shelters',
-            social: 'social'
-          };
-          const layerKey = LAYER_KEY_BY_TYPE[poi.type];
-
-          if (!layerKey || !activeLayers[layerKey]) return null;
+          const typeKey = (poi.type + (poi.type.endsWith('s') ? '' : 's')) as keyof typeof activeLayers;
+          const layerKey = poi.type === 'health_center' ? 'health_centers' : 
+                          poi.type === 'health_post' ? 'health_posts' :
+                          poi.type === 'municipality' ? 'municipalities' : 
+                          poi.type === 'pharmacy' ? 'pharmacies' :
+                          poi.type === 'parish_council' ? 'parish_councils' :
+                          poi.type === 'shelter' ? 'shelters' :
+                          poi.type === 'social' ? 'social' :
+                          typeKey;
+                          
+          if (!activeLayers[layerKey as keyof typeof activeLayers]) return null;
           
           return (
             <Marker 
@@ -318,7 +397,8 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
                     poi.type === 'police' ? 'bg-indigo-600' : 
                     poi.type === 'fire' ? 'bg-red-500' :
                     poi.type === 'municipality' ? 'bg-amber-600' :
-                    poi.type === 'pharmacy' ? 'bg-fuchsia-500' :
+                    poi.type === 'pharmacy' ? 'bg-green-600' :
+                    poi.type === 'parish_council' ? 'bg-amber-500' :
                     poi.type === 'shelter' ? 'bg-emerald-600' :
                     poi.type === 'social' ? 'bg-blue-400' :
                     'bg-slate-700'
@@ -341,7 +421,8 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
                     poi.type === 'police' ? "bg-indigo-100 text-indigo-600" : 
                     poi.type === 'fire' ? "bg-red-100 text-red-600" :
                     poi.type === 'municipality' ? "bg-amber-100 text-amber-600" :
-                    poi.type === 'pharmacy' ? "bg-fuchsia-100 text-fuchsia-600" :
+                    poi.type === 'pharmacy' ? "bg-green-100 text-green-600" :
+                    poi.type === 'parish_council' ? "bg-amber-50 text-amber-500" :
                     poi.type === 'shelter' ? "bg-emerald-100 text-emerald-700" :
                     poi.type === 'social' ? "bg-blue-100 text-blue-600" :
                     "bg-slate-100 text-slate-600"
@@ -353,6 +434,7 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
                     {poi.type === 'fire' && <Flame className="w-5 h-5" />}
                     {poi.type === 'municipality' && <Landmark className="w-5 h-5" />}
                     {poi.type === 'pharmacy' && <Pill className="w-5 h-5" />}
+                    {poi.type === 'parish_council' && <Building2 className="w-5 h-5" />}
                     {poi.type === 'sos' && <LifeBuoy className="w-5 h-5" />}
                     {poi.type === 'shelter' && <MapPin className="w-5 h-5" />}
                     {poi.type === 'social' && <Landmark className="w-5 h-5 opacity-70" />}
@@ -360,8 +442,9 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
                   <h4 className="text-[11px] font-black uppercase leading-tight">{poi.name}</h4>
                   <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                     {poi.type === 'hospital' || poi.type === 'health_center' || poi.type === 'health_post' ? 'Unidade de Saúde Médica' :
-                     poi.type === 'pharmacy' ? 'Farmácia' :
                      poi.type === 'social' ? 'Apoio Social / Lar (Não Médico)' :
+                     poi.type === 'pharmacy' ? 'Farmácia' :
+                     poi.type === 'parish_council' ? 'Junta de Freguesia' :
                      poi.type === 'municipality' ? 'Ponto Institucional' : 
                      poi.type === 'shelter' ? 'Ponto de Abrigo SOS' : 'Unidade de Emergência'}
                   </p>
@@ -385,6 +468,72 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
           );
         })}
       </MapContainer>
+
+      {/* Pesquisa no mapa — estilo Ctrl+F: escreve e vai direto ao mais próximo */}
+      <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2 items-start">
+        <button
+          onClick={() => {
+            setIsSearchOpen(!isSearchOpen);
+            if (isSearchOpen) setSearchQuery('');
+          }}
+          className={cn(
+            "w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-xl backdrop-blur-md border border-white",
+            isSearchOpen ? "bg-slate-900 text-white" : "bg-white/90 text-slate-700 hover:bg-white"
+          )}
+          title="Procurar no mapa"
+        >
+          <Search className="w-4 h-4" />
+        </button>
+
+        <AnimatePresence>
+          {isSearchOpen && (
+            <motion.div
+              initial={{ opacity: 0, x: -20, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -20, scale: 0.95 }}
+              className="bg-white/95 backdrop-blur-md p-3 rounded-2xl border border-white shadow-2xl w-56 space-y-2"
+            >
+              <input
+                autoFocus
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Hospital, farmácia, câmara..."
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-900 placeholder:text-slate-300 placeholder:font-medium focus:outline-none focus:border-slate-300"
+              />
+
+              {searchQuery.trim().length >= 2 && (
+                <div className="max-h-[200px] overflow-y-auto space-y-1 custom-scrollbar">
+                  {searchResults.length === 0 ? (
+                    <p className="text-[9px] text-slate-400 italic text-center py-2">
+                      Nada encontrado por perto. Tente aproximar o mapa da zona que procura.
+                    </p>
+                  ) : (
+                    searchResults.map(poi => (
+                      <button
+                        key={poi.id}
+                        onClick={() => {
+                          setFocusOverride({ lat: poi.location.lat, lng: poi.location.lng });
+                          setIsSearchOpen(false);
+                          setSearchQuery('');
+                        }}
+                        className="w-full text-left p-2 rounded-xl bg-white border border-slate-100 hover:border-slate-300 transition-all"
+                      >
+                        <p className="text-[10px] font-black text-slate-900 leading-tight truncate">{poi.name}</p>
+                        {userLocation && (
+                          <p className="text-[8px] font-bold text-slate-400 mt-0.5">
+                            a {poi.distance.toFixed(1)} km de si
+                          </p>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Dynamic Overlay Layer Controls */}
       <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000] items-end">

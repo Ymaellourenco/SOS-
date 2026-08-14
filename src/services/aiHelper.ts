@@ -1,29 +1,6 @@
 import { EmergencyGuide, UserProfileData } from '../types';
 import { OFFLINE_GUIDES } from '../constants';
 import { calculateDistance } from '../lib/utils';
-import { fetchNearbyEmergencyPOIs, EmergencyPOI } from './emergencyService';
-
-/**
- * Verifica se `keyword` aparece em `input` como palavra/frase inteira, não como
- * pedaço de dentro de outra palavra.
- *
- * BUG REAL que isto corrige (Ago 2026): a palavra-chave solta "mar" (para
- * detetar afogamento) fazia disparar o guia de afogamento sempre que alguém
- * escrevia "câmara municipal" — porque "mar" está literalmente contido dentro
- * de "câMARa". Um simples `input.includes(keyword)` não distingue "mar" como
- * palavra própria de "mar" como pedaço de "câmara", "marido", "mármore", etc.
- * Isto acontece com qualquer palavra-chave curta (rio, água, calor...), por
- * isso a verificação de fronteira de palavra aplica-se a todas, não só a esta.
- */
-function containsWholeWord(input: string, keyword: string): boolean {
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // \w do JavaScript não inclui letras acentuadas — por isso define-se aqui um
-  // conjunto próprio de "caracteres de palavra" em português (com acentos) para
-  // que a fronteira funcione corretamente em frases como "café" ou "não".
-  const wordChar = 'a-zà-öø-ÿ0-9';
-  const pattern = new RegExp(`(?<![${wordChar}])${escaped}(?![${wordChar}])`, 'i');
-  return pattern.test(input);
-}
 
 // Cache simples: evita repetir o pedido a /api/alerts a cada mensagem enviada.
 let situationalContextCache: { data: string; timestamp: number; lat: number; lng: number } | null = null;
@@ -35,129 +12,9 @@ const SITUATIONAL_CONTEXT_TTL = 2 * 60 * 1000; // 2 minutos
  * e não apenas no que o utilizador escreveu. Nunca deixa a IA "às cegas" quando existe
  * informação oficial disponível sobre a zona.
  */
-/**
- * Constrói um bloco de texto com os locais de emergência REAIS e verificados mais
- * próximos (hospital, esquadra, quartel de bombeiros) — a mesma pesquisa usada no
- * botão de "pesquisa real" da app (Overpass/OSM + base curada de reserva).
- *
- * Isto existe para dar à IA de chat dados verdadeiros a que se agarrar. Sem isto, a
- * IA recebia apenas a instrução "nunca invente nomes de hospitais" mas nenhum nome
- * real para usar em alternativa — e, na prática, modelos de linguagem tendem a
- * inventar um nome plausível em vez de admitir que não sabem, especialmente sob
- * pressão de uma pergunta direta numa emergência. Ao fornecer aqui os locais reais,
- * a IA passa a poder responder com factos verificados em vez de arriscar uma
- * alucinação (como aconteceu — nomes de hospital inventados/incorretos).
- */
-/**
- * Guarda o último resultado real (por tipo de local) que a função acima já deu à
- * IA para responder no chat — para que o botão "Ver X mais próximo" reutilize
- * exatamente o mesmo local, em vez de fazer uma pesquisa nova e independente.
- *
- * BUG REAL que isto corrige (Ago 2026): o texto do chat e o botão de direções
- * podiam apontar para sítios DIFERENTES na mesma conversa — ex: o chat dizia
- * "Bombeiros Municipais de Viseu, a 0.8km" (vindo da lista curada de reserva,
- * porque a Overpass falhou nesse pedido específico), e o botão pouco depois
- * abria direções para "Bombeiros Sapadores de Viseu, a 1.1km" (porque dessa vez
- * a Overpass respondeu). A Overpass é instável o suficiente para que dois
- * pedidos segundos à parte, mesmo com coordenadas quase iguais, possam ter
- * sucesso/falha diferentes — por isso reutilizar o resultado já obtido em vez de
- * perguntar outra vez é a única forma de garantir que nunca se contradizem.
- */
-let lastResolvedNearbyPlaces: {
-  byType: Partial<Record<EmergencyPOI['type'], EmergencyPOI & { distance: number }>>;
-  lat: number;
-  lng: number;
-  timestamp: number;
-} | null = null;
-
-const NEARBY_PLACES_REUSE_TTL = 5 * 60 * 1000; // 5 minutos
-const NEARBY_PLACES_REUSE_MAX_DRIFT_KM = 3; // além disto, a pessoa pode já ter-se movido demasiado
-
-/**
- * Devolve o local já mostrado no chat para este tipo (hospital, bombeiros...), se
- * ainda for recente e a localização atual não tiver mudado muito — para o botão
- * de direções usar exatamente o mesmo sítio que a IA acabou de mencionar, em vez
- * de arriscar uma pesquisa nova que dê uma resposta diferente (ver nota acima).
- */
-export function getLastResolvedNearbyPlace(
-  type: EmergencyPOI['type'],
-  currentLat: number,
-  currentLng: number
-): (EmergencyPOI & { distance: number }) | null {
-  if (!lastResolvedNearbyPlaces) return null;
-  if (Date.now() - lastResolvedNearbyPlaces.timestamp > NEARBY_PLACES_REUSE_TTL) return null;
-  const drift = calculateDistance(currentLat, currentLng, lastResolvedNearbyPlaces.lat, lastResolvedNearbyPlaces.lng);
-  if (drift > NEARBY_PLACES_REUSE_MAX_DRIFT_KM) return null;
-  return lastResolvedNearbyPlaces.byType[type] ?? null;
-}
-
-async function buildNearbyRealPlacesText(lat: number, lng: number): Promise<string> {
-  try {
-    const pois = await fetchNearbyEmergencyPOIs(lat, lng, 15);
-    if (!pois || pois.length === 0) {
-      lastResolvedNearbyPlaces = { byType: {}, lat, lng, timestamp: Date.now() };
-      return 'LOCAIS REAIS PRÓXIMOS: pesquisa em tempo real sem resultados nesta zona — não mencione nenhum nome de hospital/esquadra/quartel específico, apenas incentive a usar o botão de pesquisa real da app ou ligar 112/999.';
-    }
-
-    const withDistance = pois.map(p => ({
-      ...p,
-      distance: calculateDistance(lat, lng, p.location.lat, p.location.lng)
-    }));
-
-    const pickNearest = (type: EmergencyPOI['type'], preferPublic = false) => {
-      let candidates = withDistance.filter(p => p.type === type);
-      if (preferPublic) {
-        const publicOnes = candidates.filter(p => !p.isPrivate);
-        if (publicOnes.length > 0) candidates = publicOnes;
-      }
-      return candidates.sort((a, b) => a.distance - b.distance)[0];
-    };
-
-    const nearestHospital = pickNearest('hospital', true);
-    const nearestHealthCenter = pickNearest('health_center');
-    const nearestPolice = pickNearest('police');
-    const nearestFire = pickNearest('fire');
-    const nearestMunicipality = pickNearest('municipality');
-
-    // Guarda o que foi encontrado para o botão reutilizar depois (ver função acima).
-    lastResolvedNearbyPlaces = {
-      byType: {
-        hospital: nearestHospital,
-        health_center: nearestHealthCenter,
-        police: nearestPolice,
-        fire: nearestFire,
-        municipality: nearestMunicipality
-      },
-      lat, lng,
-      timestamp: Date.now()
-    };
-
-    const lines: string[] = [];
-    const describe = (label: string, p?: typeof withDistance[number]) => {
-      if (!p) return;
-      const addr = p.address ? `, ${p.address}` : '';
-      const estimateNote = p.isEstimate ? ' (posição aproximada — confirme ligando 112 ou pelo botão de pesquisa)' : '';
-      lines.push(`- ${label}: ${p.name}${addr} — a ${p.distance.toFixed(1)}km${estimateNote}`);
-    };
-    describe('Hospital mais próximo', nearestHospital);
-    describe('Centro de Saúde mais próximo', nearestHealthCenter);
-    describe('Esquadra/Polícia mais próxima', nearestPolice);
-    describe('Bombeiros mais próximos', nearestFire);
-    describe('Câmara Municipal/Proteção Civil mais próxima', nearestMunicipality);
-
-    if (lines.length === 0) {
-      return 'LOCAIS REAIS PRÓXIMOS: pesquisa em tempo real sem resultados nesta zona — não mencione nenhum nome de hospital/esquadra/quartel específico, apenas incentive a usar o botão de pesquisa real da app ou ligar 112/999.';
-    }
-
-    return `LOCAIS REAIS PRÓXIMOS (verificados agora, via pesquisa real da app):\n${lines.join('\n')}\n\nPode mencionar estes nomes e distâncias EXATAMENTE como estão acima, se for útil para a pessoa. NUNCA invente outro nome, endereço ou distância que não esteja nesta lista.`;
-  } catch (error) {
-    return 'LOCAIS REAIS PRÓXIMOS: não foi possível confirmar agora (falha de rede) — não mencione nenhum nome de hospital/esquadra/quartel específico, apenas incentive a usar o botão de pesquisa real da app ou ligar 112/999.';
-  }
-}
-
 export const buildSituationalContext = async (lat: number | null, lng: number | null): Promise<string> => {
   if (lat === null || lng === null) {
-    return 'LOCALIZAÇÃO: não disponível — não é possível cruzar com alertas oficiais próximos, nem confirmar hospitais/esquadras/quartéis reais perto da pessoa. Se perguntarem por um local concreto, peça para ativar a localização ou use o botão de pesquisa real da app.';
+    return 'LOCALIZAÇÃO: não disponível — não é possível cruzar com alertas oficiais próximos.';
   }
 
   if (
@@ -168,43 +25,37 @@ export const buildSituationalContext = async (lat: number | null, lng: number | 
     return situationalContextCache.data;
   }
 
-  // As duas pesquisas (alertas oficiais + locais reais próximos) são independentes
-  // uma da outra — a falha de uma nunca deve impedir a outra de ser usada.
-  const [alertsText, nearbyPlacesText] = await Promise.all([
-    (async () => {
-      try {
-        const response = await fetch('/api/alerts');
-        if (!response.ok) throw new Error('Falha ao obter alertas');
-        const alerts: any[] = await response.json();
+  try {
+    const response = await fetch('/api/alerts');
+    if (!response.ok) throw new Error('Falha ao obter alertas');
+    const alerts: any[] = await response.json();
 
-        const nearby = alerts
-          .map(a => ({ ...a, distance: calculateDistance(lat, lng, a.location.lat, a.location.lng) }))
-          .filter(a => a.distance <= 50)
-          .sort((a, b) => {
-            const rank = (s: string) => s === 'high' ? 0 : s === 'medium' ? 1 : 2;
-            const rankDiff = rank(a.severity) - rank(b.severity);
-            return rankDiff !== 0 ? rankDiff : a.distance - b.distance;
-          })
-          .slice(0, 5);
+    const nearby = alerts
+      .map(a => ({ ...a, distance: calculateDistance(lat, lng, a.location.lat, a.location.lng) }))
+      .filter(a => a.distance <= 50)
+      .sort((a, b) => {
+        const rank = (s: string) => s === 'high' ? 0 : s === 'medium' ? 1 : 2;
+        const rankDiff = rank(a.severity) - rank(b.severity);
+        return rankDiff !== 0 ? rankDiff : a.distance - b.distance;
+      })
+      .slice(0, 5);
 
-        if (nearby.length === 0) {
-          return 'ALERTAS OFICIAIS PRÓXIMOS: nenhum alerta ativo dentro de 50km da localização do utilizador neste momento, segundo as fontes oficiais (ANEPC/IPMA).';
-        }
-        const severityLabel = (s: string) => s === 'high' ? 'CRÍTICO' : s === 'medium' ? 'IMPORTANTE' : 'INFORMATIVO';
-        const lines = nearby.map(a =>
-          `- [${severityLabel(a.severity)}] ${a.title} — a ${a.distance.toFixed(1)}km${a.isActive ? ' (ainda ATIVO/em curso)' : ''}. ${a.description}`
-        );
-        return `ALERTAS OFICIAIS PRÓXIMOS (ANEPC/IPMA, confirmados, dentro de 50km):\n${lines.join('\n')}\n\nCruze estes dados com o que o utilizador descrever. Se o utilizador mencionar algo consistente com um destes alertas, trate como corroborado e aumente a urgência. Se um alerta oficial existir mas o utilizador disser que está tudo bem, informe-o da existência do alerta na mesma, sem alarmismo.`;
-      } catch (error) {
-        return 'ALERTAS OFICIAIS PRÓXIMOS: não foi possível consultar neste momento (falha de rede) — responda apenas com base no relato do utilizador e peça mais detalhes se necessário.';
-      }
-    })(),
-    buildNearbyRealPlacesText(lat, lng)
-  ]);
+    let text: string;
+    if (nearby.length === 0) {
+      text = 'ALERTAS OFICIAIS PRÓXIMOS: nenhum alerta ativo dentro de 50km da localização do utilizador neste momento, segundo as fontes oficiais (ANEPC/IPMA).';
+    } else {
+      const severityLabel = (s: string) => s === 'high' ? 'CRÍTICO' : s === 'medium' ? 'IMPORTANTE' : 'INFORMATIVO';
+      const lines = nearby.map(a =>
+        `- [${severityLabel(a.severity)}] ${a.title} — a ${a.distance.toFixed(1)}km${a.isActive ? ' (ainda ATIVO/em curso)' : ''}. ${a.description}`
+      );
+      text = `ALERTAS OFICIAIS PRÓXIMOS (ANEPC/IPMA, confirmados, dentro de 50km):\n${lines.join('\n')}\n\nCruze estes dados com o que o utilizador descrever. Se o utilizador mencionar algo consistente com um destes alertas, trate como corroborado e aumente a urgência. Se um alerta oficial existir mas o utilizador disser que está tudo bem, informe-o da existência do alerta na mesma, sem alarmismo.`;
+    }
 
-  const text = `${alertsText}\n\n${nearbyPlacesText}`;
-  situationalContextCache = { data: text, timestamp: Date.now(), lat, lng };
-  return text;
+    situationalContextCache = { data: text, timestamp: Date.now(), lat, lng };
+    return text;
+  } catch (error) {
+    return 'ALERTAS OFICIAIS PRÓXIMOS: não foi possível consultar neste momento (falha de rede) — responda apenas com base no relato do utilizador e peça mais detalhes se necessário.';
+  }
 };
 
 export const findSuggestedGuide = (text: string): EmergencyGuide | undefined => {
@@ -239,7 +90,7 @@ export const findSuggestedGuide = (text: string): EmergencyGuide | undefined => 
     ],
     flood: [
       'inundação', 'cheias', 'barrenta', 'águas', 'flood', 'enchente', 'flooding', 'furacão', 'furacao', 'hurricane',
-      'tempestade', 'storm', 'vento forte', 'ciclone', 'tornado', 'tufão', 'tufao', 'typhoon', 'vento estranho', 'céu está verde', 'vento fortíssimo',
+      'tempestade', 'storm', 'vento forte', 'ciclone', 'tornado', 'vento estranho', 'céu está verde', 'vento fortíssimo',
       'árvores todas a dobrar', 'caiu granizo enorme', 'barulho parecido com um comboio', 'nuvem em funil',
       'vai formar um tornado', 'tempestade muito agressiva', 'água está a subir', 'rua cheia de água',
       'rio saiu da margem', 'garagem inundada', 'não consigo sair de casa', 'estou preso', 'corrente é muito forte',
@@ -250,7 +101,7 @@ export const findSuggestedGuide = (text: string): EmergencyGuide | undefined => 
     heat: ['onda de calor', 'muito calor', 'calor extremo', 'insolação', 'desidratado', 'desidratação', 'heatwave', 'heat stroke']
   };
   for (const [id, keywords] of Object.entries(mappings)) {
-    if (keywords.some(kw => containsWholeWord(input, kw))) {
+    if (keywords.some(kw => input.includes(kw))) {
       return OFFLINE_GUIDES.find(g => g.id === id);
     }
   }
@@ -279,7 +130,7 @@ export const indicatesTrappedOrSurrounded = (text: string): boolean => {
     'fumo é muito intenso', 'não vejo nada', 'nao vejo nada', 'estou encurralado', 'estou bloqueado',
     'não consigo respirar', 'nao consigo respirar'
   ];
-  return keywords.some(kw => containsWholeWord(input, kw));
+  return keywords.some(kw => input.includes(kw));
 };
 
 /**
@@ -299,7 +150,7 @@ export const indicatesSuicidalIdeation = (text: string): boolean => {
     'pensamentos suicidas', 'tirar a minha vida', 'já não vale a pena viver',
     'ja nao vale a pena viver', 'quero desaparecer para sempre'
   ];
-  return keywords.some(kw => containsWholeWord(input, kw));
+  return keywords.some(kw => input.includes(kw));
 };
 
 /**
@@ -315,7 +166,7 @@ export const indicatesWantsToConfirmSafety = (text: string): boolean => {
     'estou bem e em seguranca', 'estou bem e em segurança', 'diz-lhes que estou bem',
     'avisa que estou bem', 'informar que estou bem'
   ];
-  return keywords.some(kw => containsWholeWord(input, kw));
+  return keywords.some(kw => input.includes(kw));
 };
 
 /**
@@ -355,7 +206,7 @@ const VAGUE_RELOCATION_KEYWORDS = [
 export const findExplicitDestinationType = (text: string): DestinationType | undefined => {
   const input = text.toLowerCase();
   for (const [type, keywords] of Object.entries(EXPLICIT_DESTINATION_KEYWORDS) as [DestinationType, string[]][]) {
-    if (keywords.some(kw => containsWholeWord(input, kw))) {
+    if (keywords.some(kw => input.includes(kw))) {
       return type;
     }
   }
@@ -365,18 +216,18 @@ export const findExplicitDestinationType = (text: string): DestinationType | und
 /** Se o texto expressar vontade de ir para algum lado sem dizer qual. */
 export const isVagueRelocationRequest = (text: string): boolean => {
   const input = text.toLowerCase();
-  return VAGUE_RELOCATION_KEYWORDS.some(kw => containsWholeWord(input, kw));
+  return VAGUE_RELOCATION_KEYWORDS.some(kw => input.includes(kw));
 };
 
 export const getHumanInstantResponse = (text: string): string | null => {
   const input = text.toLowerCase();
-  if (containsWholeWord(input, 'estão-me a seguir') || containsWholeWord(input, 'seguir') || containsWholeWord(input, 'perseguido')) {
+  if (input.includes('estão-me a seguir') || input.includes('seguir') || input.includes('perseguido')) {
     return "Mantenha a calma, estou aqui consigo. Procure um local iluminado e com movimento agora mesmo. Não pare de andar. Preparei o guia de segurança para si abaixo.";
   }
-  if (containsWholeWord(input, 'enfarte') || containsWholeWord(input, 'coração') || containsWholeWord(input, 'dor no peito')) {
+  if (input.includes('enfarte') || input.includes('coração') || input.includes('dor no peito')) {
     return "Tente manter-se sentado e respire fundo. Evite qualquer esforço. Já localizei o protocolo de emergência cardíaca para o orientar.";
   }
-  if (containsWholeWord(input, 'fogo') || containsWholeWord(input, 'incêndio')) {
+  if (input.includes('fogo') || input.includes('incêndio')) {
     return "Saia do local imediatamente! Não use elevadores sob nenhuma circunstância. Gatinhe se houver fumo. As instruções de evacuação estão prontas abaixo.";
   }
   return null;
@@ -423,7 +274,7 @@ export const callDatabricksAI = async (query: string, history: any[] = [], syste
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         messages: [
-          { role: 'system', content: `Você é um assistente de emergência avançado. Nunca use travessões (—, –, -) para ligar ideias ou fazer pausas — use frases curtas ou vírgulas em vez disso.${systemContext ? `\n\n${systemContext}` : ''}` },
+          { role: 'system', content: `Você é um assistente de emergência avançado.${systemContext ? `\n\n${systemContext}` : ''}` },
           ...history,
           { role: 'user', content: query }
         ] 

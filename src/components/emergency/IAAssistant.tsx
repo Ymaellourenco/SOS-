@@ -12,8 +12,7 @@ import { triggerSOS, sendAlertNotification } from '../../lib/notifications';
 import { liveLocationService } from '../../lib/liveLocationService';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
-import { findSuggestedGuide, findExplicitDestinationType, isVagueRelocationRequest, isShortAffirmativeDistressReply, indicatesTrappedOrSurrounded, indicatesWantsToConfirmSafety, indicatesSuicidalIdeation, buildSituationalContext, DestinationType, getHumanInstantResponse, getOfflineResponse, callDatabricksAI, getLastResolvedNearbyPlace } from '../../services/aiHelper';
-import type { EmergencyPOI } from '../../services/emergencyService';
+import { findSuggestedGuide, findExplicitDestinationType, isVagueRelocationRequest, isShortAffirmativeDistressReply, indicatesTrappedOrSurrounded, indicatesWantsToConfirmSafety, indicatesSuicidalIdeation, buildSituationalContext, DestinationType, getHumanInstantResponse, getOfflineResponse, callDatabricksAI } from '../../services/aiHelper';
 import { logger } from '../../lib/logger';
 
 interface Message {
@@ -134,6 +133,16 @@ const MessageItem = React.memo(({ message, onSelectGuide, onTabChange, onFindNea
                 <>Ver {DESTINATION_LABELS[message.suggestedDestinationType]} Mais Próximo <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" /></>
               )}
             </button>
+
+            {/* Alternativa: em vez de a app escolher por si, a pessoa vai ao mapa e
+                decide sozinha para onde quer ir — pode procurar, tocar em qualquer
+                ponto, e obter direções para o que ela própria escolher. */}
+            <button
+              onClick={() => onTabChange?.('alerts')}
+              className="w-full py-2.5 bg-transparent border border-slate-200 rounded-2xl flex items-center justify-center gap-2 group hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all active:scale-[0.98] text-[9px] font-black uppercase tracking-widest"
+            >
+              Prefiro escolher no mapa <MapPin className="w-3 h-3" />
+            </button>
           </div>
         </div>
       )}
@@ -205,17 +214,6 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
     if (findingDestination) return;
     setFindingDestination(type);
     voiceService.speak("A procurar o local mais próximo. Um momento.");
-
-    // CRÍTICO (Safari/iOS): window.open() só é permitido pelo bloqueador de pop-ups
-    // se acontecer de forma síncrona, ainda dentro do toque do utilizador. Todo o
-    // resto desta função usa await (localização, pesquisa de POIs, verificação de
-    // rota) — se esperássemos até ao fim para abrir a janela, o Safari já teria
-    // "esquecido" que isto começou com um toque real, e bloqueava o pop-up em
-    // silêncio, sem erro nenhum: a pessoa via o botão "a procurar" e depois nada.
-    // Por isso abrimos já aqui uma aba em branco, e só mais tarde apontamos essa
-    // mesma aba para o destino real assim que o soubermos.
-    const mapWindow = window.open('', '_blank');
-
     try {
       const { fetchNearbyEmergencyPOIs } = await import('../../services/emergencyService');
       const { calculateDistance } = await import('../../lib/utils');
@@ -231,50 +229,36 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
       } catch (geoError) {
         logger.error('Falha completa ao obter localização (nem GPS nem IP):', geoError);
         voiceService.speak("Não consegui obter a sua localização de forma nenhuma. Ligue 112.");
-        mapWindow?.close();
         setFindingDestination(null);
         return;
       }
 
-      const poiTypeMap: Record<DestinationType, EmergencyPOI['type']> = {
+      const poiTypeMap: Record<DestinationType, string> = {
         fire: 'fire', hospital: 'hospital', police: 'police', health_center: 'health_center', municipality: 'municipality'
       };
       const targetType = poiTypeMap[type];
 
-      // Reutiliza o resultado que a IA já mostrou no chat, se ainda for recente e a
-      // pessoa não se tiver mudado muito de sítio — para nunca abrir direções para um
-      // local diferente do que acabou de ser mencionado na conversa (ver nota em
-      // getLastResolvedNearbyPlace, em aiHelper.ts, sobre porque isto importa).
-      let reused = type === 'hospital'
-        ? (getLastResolvedNearbyPlace('hospital', latitude, longitude) ?? getLastResolvedNearbyPlace('health_center', latitude, longitude))
-        : getLastResolvedNearbyPlace(targetType, latitude, longitude);
+      const pois = await fetchNearbyEmergencyPOIs(latitude, longitude, 25);
+      const withDistance = pois.map(p => ({ ...p, distance: calculateDistance(latitude, longitude, p.location.lat, p.location.lng) }));
 
-      let matching: (EmergencyPOI & { distance: number })[];
-      if (reused) {
-        matching = [reused];
+      let matching: typeof withDistance;
+      if (type === 'hospital') {
+        // Prioridade: hospital primeiro sempre que exista um, mesmo que um centro de
+        // saúde esteja mais perto. Só usamos centro de saúde como alternativa quando
+        // não há mesmo nenhum hospital por perto — nunca deixamos a pessoa sem opção.
+        // Dentro dos hospitais, preferimos sempre o público (SNS) ao privado, numa
+        // emergência — só usamos um privado se não houver mesmo nenhum público por perto.
+        const allHospitals = withDistance.filter(p => p.type === 'hospital').sort((a, b) => a.distance - b.distance);
+        const publicHospitals = allHospitals.filter(p => !p.isPrivate);
+        const hospitals = publicHospitals.length > 0 ? publicHospitals : allHospitals;
+        const healthCenters = withDistance.filter(p => p.type === 'health_center').sort((a, b) => a.distance - b.distance);
+        matching = hospitals.length > 0 ? hospitals : healthCenters;
       } else {
-        const pois = await fetchNearbyEmergencyPOIs(latitude, longitude, 25);
-        const withDistance = pois.map(p => ({ ...p, distance: calculateDistance(latitude, longitude, p.location.lat, p.location.lng) }));
-
-        if (type === 'hospital') {
-          // Prioridade: hospital primeiro sempre que exista um, mesmo que um centro de
-          // saúde esteja mais perto. Só usamos centro de saúde como alternativa quando
-          // não há mesmo nenhum hospital por perto — nunca deixamos a pessoa sem opção.
-          // Dentro dos hospitais, preferimos sempre o público (SNS) ao privado, numa
-          // emergência — só usamos um privado se não houver mesmo nenhum público por perto.
-          const allHospitals = withDistance.filter(p => p.type === 'hospital').sort((a, b) => a.distance - b.distance);
-          const publicHospitals = allHospitals.filter(p => !p.isPrivate);
-          const hospitals = publicHospitals.length > 0 ? publicHospitals : allHospitals;
-          const healthCenters = withDistance.filter(p => p.type === 'health_center').sort((a, b) => a.distance - b.distance);
-          matching = hospitals.length > 0 ? hospitals : healthCenters;
-        } else {
-          matching = withDistance.filter(p => p.type === targetType).sort((a, b) => a.distance - b.distance);
-        }
+        matching = withDistance.filter(p => p.type === targetType).sort((a, b) => a.distance - b.distance);
       }
 
       if (matching.length === 0) {
         voiceService.speak("Não encontrei nenhum local desse tipo perto de si. Ligue 112 para assistência.");
-        mapWindow?.close();
         setFindingDestination(null);
         return;
       }
@@ -286,7 +270,6 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
         // real para uma posição que não existe é pior do que não mostrar nada.
         // Em vez de deixar a pessoa só com um aviso passivo, oferecemos já a ação real
         // que ajuda de verdade nesta situação: enviar a localização à rede de contactos.
-        mapWindow?.close();
         const warning = `Não tenho dados confirmados ${DESTINATION_LABELS_CONTRACTED[type]} perto de si neste momento. Ligue 112 — eles sabem a localização exata mais próxima. Entretanto, pode enviar já a sua localização à sua rede de contactos:`;
         const warningContent = `⚠️ ${warning}`;
         setMessages(prev => {
@@ -321,30 +304,7 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
         logger.warn('Verificação de rota segura falhou (a navegação continua na mesma):', e);
       }
 
-      // Aponta a aba já aberta (desde o início do toque) para o destino real. Se por
-      // algum motivo essa aba não existir (ex: bloqueador de pop-ups muito agressivo
-      // que bloqueou mesmo a abertura em branco), tentamos na mesma window.open como
-      // reserva, e se isso também falhar, deixamos sempre um link visível na
-      // conversa para a pessoa tocar manualmente — nunca falhamos em silêncio.
-      let opened = false;
-      if (mapWindow) {
-        try {
-          mapWindow.location.href = url;
-          opened = true;
-        } catch (e) {
-          logger.warn('Falha ao redirecionar a aba pré-aberta:', e);
-        }
-      }
-      if (!opened) {
-        const fallbackWindow = window.open(url, '_blank');
-        opened = !!fallbackWindow;
-      }
-      if (!opened) {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `Não consegui abrir o mapa automaticamente (o navegador bloqueou a abertura). Toque aqui para abrir as direções: ${url}`
-        }]);
-      }
+      window.open(url, '_blank');
       if (type === 'hospital' && nearest.type !== 'hospital') {
         const note = `Não encontrei nenhum hospital perto de si — a abrir direções para o centro de saúde mais próximo, ${nearest.name}, a ${nearest.distance.toFixed(1)} quilómetros.`;
         setMessages(prev => [...prev, { role: 'assistant', content: note }]);
@@ -376,7 +336,6 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
     } catch (error) {
       logger.error('Falha ao encontrar destino próximo:', error);
       voiceService.speak("Não consegui aceder à sua localização. Verifique as permissões de GPS.");
-      mapWindow?.close();
     } finally {
       setFindingDestination(null);
     }
@@ -829,12 +788,7 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
       );
 
       if (useAdvancedAI) {
-        // Janela de contexto ainda mais generosa (40 mensagens, ~20 trocas) — numa
-        // emergência com muitas mensagens curtas e rápidas ("sim", distâncias,
-        // confirmações), uma janela pequena faz a IA "esquecer" o perigo já
-        // confirmado poucas trocas atrás e voltar a perguntar coisas já respondidas,
-        // o que é perigoso e confuso.
-        const history = messages.slice(-40).map(m => ({
+        const history = messages.slice(-4).map(m => ({
           role: m.role,
           content: m.content
         }));
@@ -877,10 +831,7 @@ export function IAAssistant({ onTabChange, onSelectGuide }: IAAssistantProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: [
-              // Mesma janela generosa (40 mensagens) que a via avançada, pelo mesmo
-              // motivo: não perder o contexto de perigo já confirmado numa conversa
-              // de emergência rápida.
-              ...messages.slice(-40).map(m => ({ 
+              ...messages.slice(-5).map(m => ({ 
                 role: m.role === 'assistant' ? 'model' : 'user', 
                 parts: [{ text: m.content }] 
               })),

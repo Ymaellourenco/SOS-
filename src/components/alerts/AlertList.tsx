@@ -164,6 +164,7 @@ export function AlertList() {
           <button
             onClick={() => {
               setFilterMode('all');
+              setViewMode('list');
               voiceService.speak("Ver todos os alertas nacionais.");
             }}
             className={cn(
@@ -178,6 +179,7 @@ export function AlertList() {
           </button>
         </div>
 
+        {filterMode === 'nearby' && (
         <div className="flex items-center gap-2">
           <div className="flex-1 bg-white border border-slate-100 p-1 rounded-2xl flex shadow-sm">
              <button 
@@ -202,6 +204,7 @@ export function AlertList() {
              </button>
           </div>
         </div>
+        )}
       </div>
 
       {loading && alerts.length === 0 ? (
@@ -320,45 +323,41 @@ export function AlertList() {
         animate={{ opacity: 1 }}
         className="space-y-4"
       >
-        {((filterMode === 'nearby' && userLocation) || (filterMode === 'nearby' && fireRisk)) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {filterMode === 'nearby' && userLocation && (
-              <motion.div 
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-full shadow-sm w-fit"
-              >
-                <Navigation className="w-3 h-3 text-white fill-white shrink-0" />
-                <p className="text-[9px] font-black uppercase tracking-tight leading-none">
-                  A 50km de {userLocation.lat.toFixed(2)}°N, {Math.abs(userLocation.lng).toFixed(2)}°W
-                </p>
-              </motion.div>
-            )}
+        {filterMode === 'nearby' && userLocation && (
+          <motion.div 
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-blue-600 text-white px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2 w-fit"
+          >
+            <Navigation className="w-3 h-3 text-white fill-white shrink-0" />
+            <p className="text-[8px] font-black uppercase tracking-tight leading-none">
+              A 50km de {userLocation.lat.toFixed(2)}°N, {Math.abs(userLocation.lng).toFixed(2)}°W
+            </p>
+          </motion.div>
+        )}
 
-            {filterMode === 'nearby' && fireRisk && (
-              <div className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border shadow-sm",
-                fireRisk.rcm >= 5 ? "bg-red-50 border-red-200" :
-                fireRisk.rcm === 4 ? "bg-orange-50 border-orange-200" :
-                fireRisk.rcm === 3 ? "bg-amber-50 border-amber-200" :
-                "bg-emerald-50 border-emerald-200"
-              )}>
-                <span className="text-[11px] leading-none shrink-0">🔥</span>
-                <span className={cn(
-                  "text-[9px] font-black uppercase tracking-tight leading-none",
-                  fireRisk.rcm >= 5 ? "text-red-600" :
-                  fireRisk.rcm === 4 ? "text-orange-600" :
-                  fireRisk.rcm === 3 ? "text-amber-600" :
-                  "text-emerald-600"
-                )}>
-                  Risco de Incêndio: <span className="text-slate-800">{fireRisk.riskLabel}</span>
-                </span>
-              </div>
-            )}
+        {filterMode === 'nearby' && fireRisk && (
+          <div className={cn(
+            "inline-flex self-start items-center gap-1.5 pl-2 pr-3 py-1.5 rounded-full border",
+            fireRisk.rcm >= 5 ? "bg-red-50 border-red-200" :
+            fireRisk.rcm === 4 ? "bg-orange-50 border-orange-200" :
+            fireRisk.rcm === 3 ? "bg-amber-50 border-amber-200" :
+            "bg-emerald-50 border-emerald-200"
+          )}>
+            <span className="text-[11px] leading-none">🔥</span>
+            <span className={cn(
+              "text-[9px] font-black uppercase tracking-wide",
+              fireRisk.rcm >= 5 ? "text-red-600" :
+              fireRisk.rcm === 4 ? "text-orange-600" :
+              fireRisk.rcm === 3 ? "text-amber-600" :
+              "text-emerald-600"
+            )}>
+              Risco de Incêndio: <span className="text-slate-800">{fireRisk.riskLabel}</span>
+            </span>
           </div>
         )}
 
-        {viewMode === 'map' ? (
+        {viewMode === 'map' && filterMode === 'nearby' ? (
           <div className="space-y-4">
             <React.Suspense fallback={
               <div className="flex flex-col items-center justify-center h-[400px] bg-slate-50 rounded-[32px] gap-3">
