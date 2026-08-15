@@ -1296,38 +1296,49 @@ async function startServer() {
   ];
   let poiCircuitBreakerUntil = 0;
 
+  /**
+   * Nomes que NUNCA devem aparecer como hospital/centro de saúde/clínica, mesmo que
+   * a categoria (OSM ou TomTom) diga que sim — fontes de dados livres/comerciais por
+   * vezes classificam mal cabeleireiros, clínicas veterinárias, etc. Extraído para
+   * função própria para que a mesma lista de segurança sirva tanto os resultados da
+   * Overpass como os do TomTom, em vez de duplicar (e arriscar desatualizar só um).
+   */
+  function isNameExcluded(rawName: string): boolean {
+    const name = (rawName || '').toLowerCase();
+    if (
+      name.includes('veterinár') || name.includes('veterinar') ||
+      name.includes('animal') || name.includes('pet shop') || name.includes('petshop')
+    ) {
+      return true;
+    }
+    if (
+      name.includes('cabeleireir') || name.includes('barbearia') || name.includes('barbeiro') ||
+      name.includes('salão de beleza') || name.includes('salao de beleza') ||
+      name.includes('estética') || name.includes('estetica') ||
+      name.includes('manicure') || name.includes('pedicure') || name.includes('unhas') ||
+      name.includes('spa') || name.includes('nail') ||
+      name.includes('hair') || name.includes('grooming') || name.includes('parlour') ||
+      name.includes('parlor') || name.includes('salon') || name.includes('beauty') ||
+      name.includes('barber') || name.includes('waxing') || name.includes('lash') ||
+      name.includes('brow') || name.includes('cosmetic') || name.includes('esthetic')
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   function mapOsmToAppType(tags: any): string | null {
     const amenity = tags.amenity || '';
     const healthcare = tags.healthcare || '';
     const social = tags.social_facility || '';
     const shop = tags.shop || '';
+    const beauty = tags.shop === 'beauty' || tags.shop === 'hairdresser' || tags.beauty || '';
     const name = (tags.name || '').toLowerCase();
 
-    // EXCLUSÃO CRÍTICA: clínicas de bem-estar/estética/massagem/terapias alternativas
-    // são por vezes etiquetadas como "amenity=clinic" ou "amenity=doctors" nos dados
-    // livres do OpenStreetMap, sem qualquer distinção de urgência médica real — foi
-    // isto que causou um instituto de massagem a aparecer como "hospital mais
-    // próximo" numa emergência. Nunca podem aparecer nos resultados de urgência.
-    if (
-      name.includes('massage') || name.includes('massagem') ||
-      name.includes('estética') || name.includes('estetica') ||
-      name.includes('spa') || name.includes('bem-estar') || name.includes('bem estar') ||
-      name.includes('drenagem linfática') || name.includes('drenagem linfatica') ||
-      name.includes('terapeuta') || name.includes('acupuntura') || name.includes('acupunctura') ||
-      name.includes('osteopat') || name.includes('quiroprax') ||
-      healthcare === 'massage' || healthcare === 'alternative' || healthcare === 'spa'
-    ) {
-      return null;
-    }
-
-    // EXCLUSÃO CRÍTICA: clínicas/lojas veterinárias e de animais são por vezes mal
-    // classificadas nos dados livres do OpenStreetMap (ex: com amenity=clinic sem
-    // distinção). Nunca podem aparecer como hospital/centro de saúde humano.
-    if (
-      amenity === 'veterinary' || healthcare === 'veterinary' || shop === 'pet' ||
-      name.includes('veterinár') || name.includes('veterinar') ||
-      name.includes('animal') || name.includes('pet shop') || name.includes('petshop')
-    ) {
+    // EXCLUSÃO CRÍTICA (ver isNameExcluded acima): clínicas veterinárias, cabeleireiros,
+    // etc., mal classificadas no OSM nunca podem aparecer como hospital/centro de saúde
+    // humano — já aconteceu indicarem um cabeleireiro em vez de um hospital numa emergência.
+    if (amenity === 'veterinary' || healthcare === 'veterinary' || shop === 'pet' || beauty || amenity === 'hairdresser' || isNameExcluded(name)) {
       return null;
     }
 
@@ -1362,9 +1373,6 @@ async function startServer() {
       return 'health_center';
     }
     if (amenity === 'townhall') return 'municipality';
-    // Juntas de Freguesia costumam vir com "office=administrative" ou só pelo nome
-    // — não têm uma etiqueta própria e consistente no OpenStreetMap.
-    if (name.includes('junta de freguesia')) return 'parish_council';
     // Proteção Civil e outros gabinetes governamentais usam etiquetas OSM diferentes
     // de "townhall" — reconhecemos pelo tipo de etiqueta e, como reforço, pelo nome.
     const office = tags.office || '';
@@ -1398,6 +1406,83 @@ async function startServer() {
       'affidea', 'joaquim chaves', 'luz saúde', 'luz saude'
     ];
     return privateChains.some(chain => name.includes(chain) || operator.includes(chain));
+  }
+
+  // === PESQUISA TOMTOM (substitui a Overpass como fonte principal) ===
+  // Decisão (Ago 2026): a Overpass/OpenStreetMap é gratuita mas pouco fiável —
+  // mostrou-se instável (o mesmo pedido pode falhar de um momento para o outro) e
+  // com dados por vezes desatualizados (ex: um quartel de bombeiros que se mudou em
+  // 2019 e o OSM nunca foi atualizado). O TomTom é uma base de dados mantida
+  // profissionalmente, com tier gratuito generoso (2500 pedidos/dia, sem cartão de
+  // crédito). Fica como fonte PRINCIPAL; a Overpass mantém-se como rede de segurança
+  // caso o TomTom falhe ou a chave não esteja configurada (ver função abaixo).
+  const TOMTOM_CATEGORY_SET = 'HOSPITAL_POLYCLINIC,HEALTH_CARE_SERVICE,POLICE_STATION,FIRE_STATION_BRIGADE,GOVERNMENT_OFFICE,PHARMACY';
+
+  function mapTomTomCategoryToAppType(categorySet: string[], name: string): string | null {
+    if (isNameExcluded(name)) return null;
+    const nameLower = (name || '').toLowerCase();
+    const has = (code: string) => categorySet.includes(code);
+
+    if (has('POLICE_STATION')) return 'police';
+    if (has('FIRE_STATION_BRIGADE')) return 'fire';
+    if (has('GOVERNMENT_OFFICE')) return 'municipality';
+    if (has('PHARMACY')) return 'pharmacy';
+    if (has('HOSPITAL_POLYCLINIC') || has('HEALTH_CARE_SERVICE')) {
+      if (nameLower.includes('centro de saúde') || nameLower.includes('centro de saude') || nameLower.includes('unidade de saúde') || nameLower.includes('unidade de saude') || nameLower.includes('usf') || nameLower.includes('clínica') || nameLower.includes('clinica')) {
+        return 'health_center';
+      }
+      return 'hospital';
+    }
+    return null;
+  }
+
+  async function queryTomTom(lat: number, lng: number, radiusKm: number): Promise<any[] | null> {
+    const apiKey = process.env.TOMTOM_API_KEY;
+    if (!apiKey) return null; // sem chave configurada — deixa cair para a Overpass, sem erro
+
+    // O TomTom recusa raios muito grandes (máximo documentado: 50km) — limitamos aqui
+    // para nunca enviar um valor inválido, mesmo que o pedido vindo do mapa peça mais
+    // (ex: vista "Nacional" bem afastada), evitando um erro que faria cair para a Overpass
+    // desnecessariamente.
+    const radiusMeters = Math.round(Math.min(radiusKm, 50) * 1000);
+    const url = `https://api.tomtom.com/search/2/nearbySearch/.json?key=${encodeURIComponent(apiKey)}&lat=${lat}&lon=${lng}&radius=${radiusMeters}&categorySet=${TOMTOM_CATEGORY_SET}&limit=100&language=pt-PT`;
+
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(9000) });
+      if (!response.ok) {
+        console.warn(`[TomTom] Resposta ${response.status} — a cair para a Overpass.`);
+        return null;
+      }
+      const data = await response.json();
+      if (!Array.isArray(data.results)) return null;
+
+      return data.results.map((r: any) => {
+        const name = r.poi?.name || null;
+        const categorySet: string[] = (r.poi?.classifications || []).flatMap((c: any) => c.code ? [c.code] : []);
+        // Fallback: algumas respostas trazem os códigos diretamente em categorySet do poi
+        const rawCodes: string[] = categorySet.length > 0 ? categorySet : (r.poi?.categorySet || []).map((c: any) => c.id?.toString?.() ?? '');
+        const type = mapTomTomCategoryToAppType(rawCodes.length > 0 ? rawCodes : (r.poi?.categories || []), name || '');
+        if (type === null) return null;
+        const elementLat = r.position?.lat;
+        const elementLng = r.position?.lon;
+        if (!elementLat || !elementLng) return null;
+
+        const addr = r.address || {};
+        const addressParts = [addr.streetName, addr.streetNumber, addr.municipality || addr.municipalitySubdivision].filter(Boolean);
+
+        return {
+          id: `tomtom-${r.id}`,
+          name,
+          type,
+          location: { lat: elementLat, lng: elementLng },
+          address: addressParts.length > 0 ? addressParts.join(', ') : (addr.freeformAddress || undefined),
+          isPrivate: type === 'hospital' ? isPrivateHospital({ name }) : undefined
+        };
+      }).filter((item: any) => item !== null);
+    } catch (error) {
+      console.warn('[TomTom] Pedido falhou — a cair para a Overpass:', error);
+      return null;
+    }
   }
 
   // === VERIFICAÇÃO DE ROTA SEGURA ===
@@ -1527,49 +1612,111 @@ async function startServer() {
     }
   });
 
-  /**
-   * Fonte primária de hospitais/esquadras/bombeiros quando há uma chave TomTom
-   * configurada — dados muito mais fiáveis e atualizados do que o OpenStreetMap
-   * (que é feito pela comunidade e pode ter erros de classificação, como um
-   * instituto de massagem aparecer marcado como clínica). Se a chave não estiver
-   * configurada, ou o pedido falhar, devolve null e o código chama o OpenStreetMap
-   * como reserva — nunca ficamos sem nenhuma fonte de dados.
-   */
-  async function fetchFromTomTom(lat: number, lng: number, radiusMeters: number): Promise<any[] | null> {
-    const key = process.env.TOMTOM_API_KEY;
-    if (!key) return null;
+  // === PESQUISA LIVRE NO MAPA ===
+  // Diferente de /api/emergency-pois (que mostra hospitais/farmácias/etc. que a
+  // app identificou sozinha), este endpoint deixa a PESSOA escolher o destino —
+  // ela escreve o nome de um sítio que vê no mapa (ou que conhece), e isto
+  // devolve candidatos reais com coordenadas, para ela escolher e ser
+  // encaminhada para lá. Contorna por completo qualquer erro da nossa base de
+  // dados: quem identifica o local é a própria pessoa, não a app.
+  app.get("/api/geocode-search", async (req, res) => {
+    const query = (req.query.q as string || "").trim();
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
 
-    const categories: { query: string; type: string }[] = [
-      { query: 'hospital', type: 'hospital' },
-      { query: 'esquadra de polícia', type: 'police' },
-      { query: 'bombeiros', type: 'fire' },
-      { query: 'centro de saúde', type: 'health_center' },
-      { query: 'farmácia', type: 'pharmacy' },
-      { query: 'câmara municipal', type: 'municipality' },
-      { query: 'junta de freguesia', type: 'parish_council' }
-    ];
+    if (!query || query.length < 2) {
+      return res.status(400).json({ error: "Escreva pelo menos 2 caracteres." });
+    }
+
+    const apiKey = process.env.TOMTOM_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ error: "Pesquisa indisponível de momento.", results: [] });
+    }
 
     try {
-      const perCategory = await Promise.all(categories.map(async ({ query, type }) => {
-        const url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${key}&lat=${lat}&lon=${lng}&radius=${radiusMeters}&limit=10&countrySet=PT`;
-        const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-        if (!response.ok) return [];
-        const data = await response.json();
-        return (data.results || []).map((r: any) => ({
-          id: `tomtom-${r.id}`,
-          name: r.poi?.name || null,
-          type,
-          location: { lat: r.position?.lat, lng: r.position?.lon },
-          address: [r.address?.streetName, r.address?.streetNumber, r.address?.municipality].filter(Boolean).join(', ') || undefined,
-          isPrivate: type === 'hospital' ? isPrivateHospital({ name: r.poi?.name }) : undefined
-        })).filter((item: any) => item.location.lat && item.location.lng);
-      }));
-      return perCategory.flat();
+      let url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${encodeURIComponent(apiKey)}&countrySet=PT&limit=6&language=pt-PT`;
+      // Prioriza resultados perto de onde a pessoa está, sem excluir o resto do país.
+      if (!isNaN(lat) && !isNaN(lng)) {
+        url += `&lat=${lat}&lon=${lng}`;
+      }
+      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!response.ok) {
+        return res.status(502).json({ error: "Falha na pesquisa.", results: [] });
+      }
+      const data = await response.json();
+      const results = (data.results || []).map((r: any) => {
+        const addr = r.address || {};
+        const addressParts = [addr.streetName, addr.streetNumber, addr.municipality || addr.municipalitySubdivision].filter(Boolean);
+        return {
+          name: r.poi?.name || addr.freeformAddress || query,
+          address: addressParts.length > 0 ? addressParts.join(', ') : (addr.freeformAddress || ''),
+          lat: r.position?.lat,
+          lng: r.position?.lon
+        };
+      }).filter((r: any) => r.lat && r.lng);
+
+      res.json({ results });
     } catch (error) {
-      console.warn('[EmergencyPOIs] TomTom falhou, a usar OpenStreetMap como reserva:', error);
-      return null;
+      console.warn("[GeocodeSearch] Falha:", error);
+      res.status(502).json({ error: "Falha na pesquisa.", results: [] });
     }
-  }
+  });
+
+  // Dá um nome ao ponto exato onde a pessoa tocou no mapa (opcional — se falhar,
+  // a app mostra só as coordenadas, que já chegam para abrir a rota).
+  app.get("/api/reverse-geocode", async (req, res) => {
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
+    if (isNaN(lat) || isNaN(lng)) {
+      return res.status(400).json({ error: "lat e lng são obrigatórios." });
+    }
+    const apiKey = process.env.TOMTOM_API_KEY;
+    if (!apiKey) {
+      return res.json({ label: null });
+    }
+    try {
+      const url = `https://api.tomtom.com/search/2/reverseGeocode/${lat},${lng}.json?key=${encodeURIComponent(apiKey)}&language=pt-PT`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      if (!response.ok) return res.json({ label: null });
+      const data = await response.json();
+      const addr = data.addresses?.[0]?.address;
+      const label = addr?.freeformAddress || null;
+      res.json({ label });
+    } catch (error) {
+      res.json({ label: null });
+    }
+  });
+
+  // === PROXY DE TILES DE SATÉLITE (TomTom) ===
+  // O mapa usava antes um serviço gratuito da Esri (server.arcgisonline.com) para
+  // imagens de satélite — mas a Esri descontinuou o acesso sem chave a esse serviço
+  // em 2022, o que fazia o mapa aparecer completamente em branco (nenhuma tile
+  // carregava). Como já temos uma chave TomTom a funcionar, passamos as tiles de
+  // satélite por aqui — o browser nunca vê a chave diretamente, e se a chave alguma
+  // vez faltar, cai automaticamente para as tiles normais do OpenStreetMap em vez de
+  // ficar em branco outra vez.
+  app.get("/api/tile/sat/:z/:x/:y", async (req, res) => {
+    const { z, x, y } = req.params;
+    const apiKey = process.env.TOMTOM_API_KEY;
+
+    if (!apiKey) {
+      return res.redirect(302, `https://tile.openstreetmap.org/${z}/${x}/${y}.png`);
+    }
+
+    try {
+      const url = `https://api.tomtom.com/map/1/tile/sat/main/${z}/${x}/${y}.jpg?key=${encodeURIComponent(apiKey)}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(9000) });
+      if (!response.ok) {
+        return res.redirect(302, `https://tile.openstreetmap.org/${z}/${x}/${y}.png`);
+      }
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      const buffer = Buffer.from(await response.arrayBuffer());
+      res.send(buffer);
+    } catch (error) {
+      res.redirect(302, `https://tile.openstreetmap.org/${z}/${x}/${y}.png`);
+    }
+  });
 
   app.get("/api/emergency-pois", async (req, res) => {
     const lat = parseFloat(req.query.lat as string);
@@ -1580,19 +1727,18 @@ async function startServer() {
       return res.status(400).json({ error: "lat e lng são obrigatórios." });
     }
 
+    // TomTom primeiro (fonte principal — ver nota acima de queryTomTom). Só cai para
+    // a Overpass se não houver chave configurada, ou se o pedido ao TomTom falhar.
+    const tomtomResults = await queryTomTom(lat, lng, radiusKm);
+    if (tomtomResults !== null) {
+      return res.json({ elements: tomtomResults, source: 'tomtom' });
+    }
+
     if (Date.now() < poiCircuitBreakerUntil) {
       return res.json({ elements: [], circuitBreakerActive: true });
     }
 
     const radiusMeters = radiusKm * 1000;
-
-    // Tenta o TomTom primeiro, se estiver configurado — só cai para o
-    // OpenStreetMap se não houver chave, ou se o TomTom falhar.
-    const tomtomResults = await fetchFromTomTom(lat, lng, radiusMeters);
-    if (tomtomResults && tomtomResults.length > 0) {
-      return res.json({ elements: tomtomResults, source: 'tomtom' });
-    }
-
     const query = `
       [out:json][timeout:20];
       (
@@ -1601,9 +1747,6 @@ async function startServer() {
         node["office"="government"](around:${radiusMeters},${lat},${lng});
         way["office"="government"](around:${radiusMeters},${lat},${lng});
         node["emergency"="government"](around:${radiusMeters},${lat},${lng});
-        node["office"="administrative"]["operator"~"Junta de Freguesia",i](around:${radiusMeters},${lat},${lng});
-        way["office"="administrative"]["operator"~"Junta de Freguesia",i](around:${radiusMeters},${lat},${lng});
-        node["name"~"Junta de Freguesia",i](around:${radiusMeters},${lat},${lng});
       );
       out center;
     `;
@@ -1645,13 +1788,87 @@ async function startServer() {
         };
       }).filter((item: any) => item !== null);
 
-      res.json({ elements: results });
+      res.json({ elements: results, source: 'overpass' });
     } catch (error) {
       console.warn("[EmergencyPOIs] Todos os espelhos Overpass falharam:", error);
       // Cooldown mais curto (45s, não 3min) — uma falha transitória não devia deixar-nos
       // "às escuras" durante minutos seguidos quando alguém está mesmo a tentar de novo.
       poiCircuitBreakerUntil = Date.now() + 45 * 1000;
       res.json({ elements: [], allMirrorsFailed: true });
+    }
+  });
+
+  // === REPORTES DE MORADAS ERRADAS ===
+  // Como nem a lista curada nem o TomTom/Overpass são 100% fiáveis (já vimos vários
+  // casos: PSP e bombeiros de Viseu com moradas erradas/desatualizadas), em vez de
+  // se corrigir um a um só quando alguém dá por acaso com um erro, qualquer pessoa
+  // pode agora sinalizar uma bolinha errada diretamente no mapa. Os reportes ficam
+  // guardados aqui para revisão manual — não corrigem nada sozinhos, só juntam a
+  // informação num sítio central em vez de se perder.
+  app.post("/api/report-wrong-location", express.json(), async (req, res) => {
+    try {
+      const { poiId, name, type, lat, lng, address, note } = req.body || {};
+      if (!name || typeof lat !== 'number' || typeof lng !== 'number') {
+        return res.status(400).json({ error: "name, lat e lng são obrigatórios." });
+      }
+      const docRef = await getFirestore().collection("locationReports").add({
+        poiId: poiId || null,
+        name,
+        type: type || null,
+        lat,
+        lng,
+        address: address || null,
+        note: note || null,
+        status: 'pending',
+        reportedAt: FieldValue.serverTimestamp()
+      });
+      res.json({ ok: true, id: docRef.id });
+    } catch (error) {
+      console.error("[ReportWrongLocation] Falha ao guardar reporte:", error);
+      res.status(500).json({ error: "Falha ao guardar o reporte." });
+    }
+  });
+
+  function checkAdminReportsKey(req: any, res: any): boolean {
+    const expected = process.env.ADMIN_REPORTS_KEY;
+    if (!expected) {
+      res.status(503).json({ error: "ADMIN_REPORTS_KEY não configurada no servidor." });
+      return false;
+    }
+    if (req.query.key !== expected) {
+      res.status(401).json({ error: "Chave inválida." });
+      return false;
+    }
+    return true;
+  }
+
+  app.get("/api/report-wrong-location", async (req, res) => {
+    if (!checkAdminReportsKey(req, res)) return;
+    try {
+      const snap = await getFirestore().collection("locationReports").orderBy("reportedAt", "desc").limit(500).get();
+      const reports = snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          reportedAt: data.reportedAt?.toDate?.()?.toISOString() || null
+        };
+      });
+      res.json({ reports });
+    } catch (error) {
+      console.error("[ReportWrongLocation] Falha ao listar reportes:", error);
+      res.status(500).json({ error: "Falha ao listar reportes." });
+    }
+  });
+
+  app.delete("/api/report-wrong-location/:id", async (req, res) => {
+    if (!checkAdminReportsKey(req, res)) return;
+    try {
+      await getFirestore().collection("locationReports").doc(req.params.id).delete();
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[ReportWrongLocation] Falha ao remover reporte:", error);
+      res.status(500).json({ error: "Falha ao remover reporte." });
     }
   });
 
