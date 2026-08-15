@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Alert } from '../../types';
-import { Flame, HeartPulse, ShieldCheck, Stethoscope, MapPin, Landmark, LifeBuoy, Loader2, Pill, Building2, Search } from 'lucide-react';
+import { Flame, HeartPulse, ShieldCheck, Stethoscope, MapPin, Landmark, LifeBuoy, Loader2, Pill, Search, X, Navigation2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { fetchNearbyEmergencyPOIs, EmergencyPOI } from '../../services/emergencyService';
 import { logger } from '../../lib/logger';
@@ -25,14 +25,13 @@ const POI_SVGS = {
   police: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>',
   fire: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.203 1.15-3.003L8.5 14.5Z"/></svg>',
   municipality: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="12" x="2" y="10" rx="2"/><path d="M6 10V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6"/><path d="M12 10V2"/><path d="M6 14h.01"/><path d="M10 14h.01"/><path d="M14 14h.01"/><path d="M18 14h.01"/></svg>',
-  pharmacy: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
-  parish_council: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4 8 4v14"/><path d="M9 21v-6h6v6"/></svg>',
+  pharmacy: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>',
   sos: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>',
   shelter: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"/><path d="m3 9 2.45-4.91A2 2 0 0 1 7.23 3h9.54a2 2 0 0 1 1.78 1.09L21 9"/></svg>',
   social: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
 };
 
-function MapController({ center, zoom, onMoveEnd, onMapClick }: { center: [number, number], zoom: number, onMoveEnd?: (lat: number, lng: number) => void, onMapClick?: (lat: number, lng: number) => void }) {
+function MapController({ center, zoom, onMoveEnd }: { center: [number, number], zoom: number, onMoveEnd?: (lat: number, lng: number, radiusKm: number) => void }) {
   const map = useMap();
   
   useEffect(() => {
@@ -42,18 +41,39 @@ function MapController({ center, zoom, onMoveEnd, onMapClick }: { center: [numbe
     });
   }, [center, zoom, map]);
 
+  // Calcula um raio de pesquisa que corresponde ao que está mesmo visível no ecrã —
+  // em vez de um raio fixo (que deixava a maior parte do mapa "Nacional" sem
+  // nenhuma bolinha, porque 10km é praticamente invisível à escala do país inteiro).
+  const boundsRadiusKm = useCallback(() => {
+    const bounds = map.getBounds();
+    const center = map.getCenter();
+    const corner = bounds.getNorthEast();
+    const distMeters = center.distanceTo(corner);
+    const radiusKm = distMeters / 1000;
+    return Math.min(Math.max(radiusKm, 3), 60); // entre 3km e 60km (limite também aplicado no servidor)
+  }, [map]);
+
   useMapEvents({
     moveend: () => {
       const newCenter = map.getCenter();
-      if (onMoveEnd) onMoveEnd(newCenter.lat, newCenter.lng);
-    },
-    // Permite à pessoa escolher ela própria um destino em qualquer ponto do mapa,
-    // em vez de estar limitada aos pontos que a app já conhece.
-    click: (e: any) => {
-      if (onMapClick) onMapClick(e.latlng.lat, e.latlng.lng);
+      if (onMoveEnd) onMoveEnd(newCenter.lat, newCenter.lng, boundsRadiusKm());
     }
   });
 
+  return null;
+}
+
+/**
+ * Deteta um toque num ponto vazio do mapa (não numa bolinha já existente) e avisa
+ * o componente principal — para a pessoa poder escolher QUALQUER ponto que veja no
+ * mapa (mesmo que a nossa base de dados não o conheça) e pedir direções para lá.
+ */
+function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click: (e) => {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    }
+  });
   return null;
 }
 
@@ -84,6 +104,34 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
     }
   });
   const [isLoadingPois, setIsLoadingPois] = useState(false);
+  // Guarda que bolinhas já foram sinalizadas nesta sessão, só para o botão mudar
+  // para "Reportado ✓" e a pessoa não voltar a carregar sem querer.
+  const [reportedPoiIds, setReportedPoiIds] = useState<Set<string>>(new Set());
+  const [reportingPoiId, setReportingPoiId] = useState<string | null>(null);
+
+  const reportWrongLocation = useCallback(async (poi: EmergencyPOI) => {
+    setReportingPoiId(poi.id);
+    try {
+      await fetch('/api/report-wrong-location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          poiId: poi.id,
+          name: poi.name,
+          type: poi.type,
+          lat: poi.location.lat,
+          lng: poi.location.lng,
+          address: poi.address || null
+        })
+      });
+      setReportedPoiIds(prev => new Set(prev).add(poi.id));
+    } catch (err) {
+      logger.error('Falha ao enviar reporte de morada errada:', err);
+    } finally {
+      setReportingPoiId(null);
+    }
+  }, []);
+
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [lastPoisLocation, setLastPoisLocation] = useState<{lat: number, lng: number} | null>(null);
   const [activeLayers, setActiveLayers] = useState({
@@ -95,42 +143,87 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
     fire: true,
     municipalities: true,
     pharmacies: true,
-    parish_councils: true,
     sos: true,
     shelters: true,
     social: true
   });
   const [showNearestPoints, setShowNearestPoints] = useState(false);
-  // Destino escolhido pela própria pessoa, tocando em qualquer ponto do mapa.
-  const [customDestination, setCustomDestination] = useState<{ lat: number; lng: number } | null>(null);
-  // Pesquisa dentro do mapa (estilo Ctrl+F): filtra os pontos já carregados pelo
-  // nome, e ordena pelos mais próximos da pessoa.
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number>(() => {
     return parseInt(localStorage.getItem('sos_radar_last_updated') || '0');
   });
 
-  // Quando a pessoa escolhe um resultado da pesquisa, o mapa foca nesse ponto —
-  // esta sobreposição tem prioridade sobre o centro normal (perto de mim/nacional)
-  // até ela mudar de aba ou fazer nova pesquisa.
-  const [focusOverride, setFocusOverride] = useState<{ lat: number; lng: number } | null>(null);
+  // --- Pesquisa livre + pin manual no mapa ---
+  // A pessoa escolhe o destino, em vez de depender só dos locais que a app
+  // identificou sozinha (ver pedido do utilizador: liberdade para marcar
+  // qualquer ponto do mapa, ou escrever o nome de um sítio, e ser encaminhado
+  // para lá diretamente).
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ name: string; address: string; lat: number; lng: number }[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [customPin, setCustomPin] = useState<{ lat: number; lng: number; label: string | null; loadingLabel: boolean } | null>(null);
+
+  const selectSearchResult = (result: { name: string; address: string; lat: number; lng: number }) => {
+    setCustomPin({ lat: result.lat, lng: result.lng, label: result.name, loadingLabel: false });
+    setSearchResults([]);
+    setSearchQuery('');
+  };
+
+  const handleMapClick = useCallback(async (lat: number, lng: number) => {
+    setCustomPin({ lat, lng, label: null, loadingLabel: true });
+    try {
+      const response = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+      const data = await response.json();
+      setCustomPin({ lat, lng, label: data.label || null, loadingLabel: false });
+    } catch {
+      setCustomPin({ lat, lng, label: null, loadingLabel: false });
+    }
+  }, []);
 
   const center: [number, number] = useMemo(() => {
-    if (focusOverride) return [focusOverride.lat, focusOverride.lng];
     // Nacional mostra sempre Portugal inteiro, independentemente de teres GPS ligado —
     // é isso que distingue visualmente de "Perto de Mim", que foca sempre em ti.
     if (viewScope === 'nearby' && userLocation) return [userLocation.lat, userLocation.lng];
     return [39.5, -8.0]; // Centro de Portugal
-  }, [userLocation, viewScope, focusOverride]);
+  }, [userLocation, viewScope]);
 
-  const zoom = focusOverride ? 16 : (viewScope === 'nearby' && userLocation ? 13 : 7);
+  const zoom = viewScope === 'nearby' && userLocation ? 13 : 7;
 
-  // Ao mudar entre "Perto de Mim" e "Nacional", limpa o foco da pesquisa, para a
-  // aba escolhida voltar a mandar no que é mostrado.
+  const runSearch = useCallback(async (query: string) => {
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setIsSearching(true);
+    setSearchError(null);
+    try {
+      const biasLat = userLocation?.lat ?? center[0];
+      const biasLng = userLocation?.lng ?? center[1];
+      const response = await fetch(`/api/geocode-search?q=${encodeURIComponent(query)}&lat=${biasLat}&lng=${biasLng}`);
+      const data = await response.json();
+      if (!response.ok || !data.results) {
+        setSearchError('Não foi possível pesquisar agora.');
+        setSearchResults([]);
+        return;
+      }
+      setSearchResults(data.results);
+      if (data.results.length === 0) {
+        setSearchError('Nenhum resultado encontrado.');
+      }
+    } catch (err) {
+      setSearchError('Não foi possível pesquisar agora.');
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [userLocation, center]);
+
+  // Pesquisa com um pequeno atraso (debounce) enquanto a pessoa escreve, para não
+  // disparar um pedido a cada letra.
   useEffect(() => {
-    setFocusOverride(null);
-  }, [viewScope]);
+    const timeout = setTimeout(() => runSearch(searchQuery), 500);
+    return () => clearTimeout(timeout);
+  }, [searchQuery, runSearch]);
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -175,89 +268,130 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
       .slice(0, 10);
   }, [userLocation, poiData, calculateDistance]);
 
-  /**
-   * Resultados da pesquisa no mapa — funciona como um Ctrl+F: filtra os pontos já
-   * carregados cujo nome (ou tipo) corresponda ao que a pessoa escreveu, e ordena
-   * pelos mais próximos dela, para o primeiro resultado ser sempre o mais útil.
-   */
-  const searchResults = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (q.length < 2) return [];
-
-    const typeLabels: Record<string, string> = {
-      hospital: 'hospital',
-      health_center: 'centro de saúde',
-      health_post: 'posto de saúde',
-      police: 'polícia esquadra',
-      fire: 'bombeiros',
-      municipality: 'câmara municipal',
-      pharmacy: 'farmácia',
-      parish_council: 'junta de freguesia',
-      shelter: 'abrigo',
-      social: 'apoio social'
-    };
-
-    return poiData
-      .filter(poi => {
-        const name = (poi.name || '').toLowerCase();
-        const typeLabel = typeLabels[poi.type] || '';
-        return name.includes(q) || typeLabel.includes(q);
-      })
-      .map(poi => ({
-        ...poi,
-        distance: userLocation
-          ? calculateDistance(userLocation.lat, userLocation.lng, poi.location.lat, poi.location.lng)
-          : 0
-      }))
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, 8);
-  }, [searchQuery, poiData, userLocation, calculateDistance]);
-
   const openInGoogleMaps = (lat: number, lng: number, label: string) => {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
     window.open(url, '_blank');
   };
 
-  const loadPois = useCallback(async (lat: number, lng: number) => {
+  // Limite de segurança: sem isto, o mapa ia juntando bolinhas para sempre, cada vez
+  // que a pessoa mexia/explorava — ao fim de algum tempo isso acumula centenas ou
+  // milhares de marcadores em memória, e é isso que estava a fazer a app travar ao
+  // explorar o mapa. Mantemos só os POIs mais próximos do sítio onde se está agora.
+  const MAX_POIS_IN_MEMORY = 300;
+
+  const loadPois = useCallback(async (lat: number, lng: number, radiusKm: number = 10) => {
     if (isOffline) return;
     setIsLoadingPois(true);
     try {
-      const radius = 10; // 10km radius from current view
-      const newPois = await fetchNearbyEmergencyPOIs(lat, lng, radius);
+      const newPois = await fetchNearbyEmergencyPOIs(lat, lng, radiusKm);
       setPoiData(prev => {
         const existingIds = new Set(prev.map(p => p.id));
         const uniqueNewPois = Array.from(new Map(newPois.map(item => [item.id, item])).values());
         const filtered = uniqueNewPois.filter(p => !existingIds.has(p.id));
-        return [...prev, ...filtered];
+        const merged = [...prev, ...filtered];
+
+        if (merged.length <= MAX_POIS_IN_MEMORY) return merged;
+
+        // Passou do limite: descarta os que estão mais longe do centro atual,
+        // não os mais antigos — assim o que se vê à volta de onde se está agora
+        // nunca desaparece, só o que já ficou para trás.
+        return merged
+          .map(p => ({ p, dist: calculateDistance(lat, lng, p.location.lat, p.location.lng) }))
+          .sort((a, b) => a.dist - b.dist)
+          .slice(0, MAX_POIS_IN_MEMORY)
+          .map(x => x.p);
       });
     } catch (err) {
       logger.error(err);
     } finally {
       setIsLoadingPois(false);
     }
+  }, [calculateDistance]);
+
+  // Debounce ao mexer/ampliar o mapa — sem isto, arrastar ou ampliar rapidamente
+  // disparava um pedido novo a cada pequeníssimo movimento, várias vezes por
+  // segundo, o que também contribuía para a app engasgar.
+  const moveEndTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedLoadPois = useCallback((lat: number, lng: number, radiusKm: number) => {
+    if (moveEndTimeoutRef.current) clearTimeout(moveEndTimeoutRef.current);
+    moveEndTimeoutRef.current = setTimeout(() => loadPois(lat, lng, radiusKm), 400);
+  }, [loadPois]);
+
+  useEffect(() => {
+    return () => {
+      if (moveEndTimeoutRef.current) clearTimeout(moveEndTimeoutRef.current);
+    };
   }, []);
 
   useEffect(() => {
     if (userLocation) {
       if (!lastPoisLocation) {
         setLastPoisLocation(userLocation);
-        loadPois(userLocation.lat, userLocation.lng);
+        // Raio inicial maior na vista "Nacional" (zoom bem afastado), pequeno na
+        // vista "Perto de Mim" — evita andar a pedir 60km de raio quando já se está
+        // com o zoom no bairro, e vice-versa.
+        loadPois(userLocation.lat, userLocation.lng, viewScope === 'all' ? 60 : 10);
       } else {
         const dist = calculateDistance(userLocation.lat, userLocation.lng, lastPoisLocation.lat, lastPoisLocation.lng);
         // Only reload if user moved more than 2km
         if (dist > 2) {
           setLastPoisLocation(userLocation);
-          loadPois(userLocation.lat, userLocation.lng);
+          loadPois(userLocation.lat, userLocation.lng, viewScope === 'all' ? 60 : 10);
         }
       }
     } else if (center) {
       // Fallback for when we don't have user location but have a map center
-      loadPois(center[0], center[1]);
+      loadPois(center[0], center[1], viewScope === 'all' ? 60 : 10);
     }
-  }, [userLocation, center, lastPoisLocation, loadPois, calculateDistance]);
+  }, [userLocation, center, lastPoisLocation, loadPois, calculateDistance, viewScope]);
 
   return (
     <div className="relative h-[390px] w-full rounded-[32px] overflow-hidden border border-slate-200 shadow-inner group z-0">
+      {/* Pesquisa livre — escrever o nome de um sítio visto no mapa e ser
+          encaminhado para lá diretamente, sem depender dos marcadores automáticos. */}
+      <div className="absolute top-3 left-3 right-3 z-[1000]">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Pesquisar um local (ex: Farmácia, Câmara...)"
+            className="w-full pl-9 pr-9 py-2.5 rounded-full bg-white/95 backdrop-blur border border-slate-200 shadow-md text-[11px] font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-medium focus:outline-none focus:ring-2 focus:ring-slate-900"
+          />
+          {isSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />}
+          {!isSearching && searchQuery && (
+            <button
+              onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchError(null); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {(searchResults.length > 0 || searchError) && (
+          <div className="mt-1.5 bg-white rounded-2xl border border-slate-200 shadow-lg overflow-hidden max-h-[220px] overflow-y-auto">
+            {searchError && searchResults.length === 0 && (
+              <p className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wide">{searchError}</p>
+            )}
+            {searchResults.map((result, i) => (
+              <button
+                key={i}
+                onClick={() => selectSearchResult(result)}
+                className="w-full text-left px-4 py-2.5 hover:bg-slate-50 border-b border-slate-100 last:border-0 flex items-start gap-2"
+              >
+                <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                <span>
+                  <span className="block text-[11px] font-black text-slate-900 leading-tight">{result.name}</span>
+                  {result.address && <span className="block text-[9px] text-slate-500 mt-0.5">{result.address}</span>}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <MapContainer 
         center={center} 
         zoom={zoom} 
@@ -274,47 +408,48 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
         <MapController 
           center={center} 
           zoom={zoom} 
-          onMoveEnd={(lat, lng) => loadPois(lat, lng)}
-          onMapClick={(lat, lng) => setCustomDestination({ lat, lng })}
+          onMoveEnd={(lat, lng, radiusKm) => debouncedLoadPois(lat, lng, radiusKm)}
         />
+        <MapClickHandler onMapClick={handleMapClick} />
 
         {userLocation && (
           <Marker position={[userLocation.lat, userLocation.lng]} icon={createUserIcon()} />
         )}
 
-        {/* Destino escolhido pela pessoa, tocando no mapa */}
-        {customDestination && (
+        {/* Pin escolhido pela pessoa: por pesquisa de texto, ou por tocar diretamente
+            no mapa. Isto existe precisamente para a pessoa poder escolher QUALQUER
+            sítio que veja no mapa, sem depender dos locais que a app identificou
+            sozinha (ver pedido do utilizador nesta conversa). */}
+        {customPin && (
           <Marker
-            position={[customDestination.lat, customDestination.lng]}
+            position={[customPin.lat, customPin.lng]}
             icon={L.divIcon({
-              className: 'custom-destination-icon',
+              className: 'custom-pin-icon',
               html: `
-                <div class="w-5 h-5 rounded-full bg-red-600 border-2 border-white shadow-lg flex items-center justify-center text-white">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                <div class="relative -translate-y-1/2">
+                  <div class="w-9 h-9 rounded-full bg-slate-900 border-2 border-white shadow-lg flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>
+                  </div>
                 </div>
               `,
-              iconSize: [20, 20],
-              iconAnchor: [10, 20],
-              popupAnchor: [0, -20]
+              iconSize: [36, 36],
+              iconAnchor: [18, 36]
             })}
           >
-            <Popup className="custom-popup">
-              <div className="p-2 text-center text-slate-900">
-                <h4 className="text-[11px] font-black uppercase leading-tight">Destino escolhido por si</h4>
-                <p className="text-[8px] font-bold text-slate-400 mt-1">
-                  {customDestination.lat.toFixed(5)}, {customDestination.lng.toFixed(5)}
+            <Popup>
+              <div className="p-1 min-w-[180px]">
+                <h4 className="text-sm font-black uppercase text-slate-900 leading-tight mb-1">
+                  {customPin.loadingLabel ? 'A identificar local...' : (customPin.label || 'Local escolhido')}
+                </h4>
+                <p className="text-[10px] text-slate-500 mb-2">
+                  {customPin.lat.toFixed(5)}, {customPin.lng.toFixed(5)}
                 </p>
                 <button
-                  onClick={() => openInGoogleMaps(customDestination.lat, customDestination.lng, 'Destino')}
-                  className="mt-2 w-full py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest"
+                  onClick={() => openInGoogleMaps(customPin.lat, customPin.lng, customPin.label || 'Destino')}
+                  className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
                 >
-                  Ver Direções
-                </button>
-                <button
-                  onClick={() => setCustomDestination(null)}
-                  className="mt-1.5 w-full py-1.5 text-slate-400 text-[8px] font-bold uppercase tracking-widest"
-                >
-                  Remover marcador
+                  <Navigation2 className="w-3 h-3" />
+                  Direções para aqui
                 </button>
               </div>
             </Popup>
@@ -371,17 +506,27 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
 
         {/* Real Emergency POIs (OSM) */}
         {poiData.map(poi => {
-          const typeKey = (poi.type + (poi.type.endsWith('s') ? '' : 's')) as keyof typeof activeLayers;
-          const layerKey = poi.type === 'health_center' ? 'health_centers' : 
-                          poi.type === 'health_post' ? 'health_posts' :
-                          poi.type === 'municipality' ? 'municipalities' : 
-                          poi.type === 'pharmacy' ? 'pharmacies' :
-                          poi.type === 'parish_council' ? 'parish_councils' :
-                          poi.type === 'shelter' ? 'shelters' :
-                          poi.type === 'social' ? 'social' :
-                          typeKey;
-                          
-          if (!activeLayers[layerKey as keyof typeof activeLayers]) return null;
+          // Mapeamento explícito, um-para-um, de cada tipo de local para a sua
+          // camada correspondente em activeLayers. Antes disto era calculado a
+          // adivinhar o plural (ex: "police" + "s" = "polices"), o que não batia
+          // certo com a chave real "police" em activeLayers — e por isso os
+          // marcadores de polícia, bombeiros e SOS nunca apareciam no mapa,
+          // mesmo quando os dados chegavam corretos do servidor.
+          const LAYER_KEY_BY_TYPE: Record<EmergencyPOI['type'], keyof typeof activeLayers> = {
+            hospital: 'hospitals',
+            health_center: 'health_centers',
+            health_post: 'health_posts',
+            police: 'police',
+            fire: 'fire',
+            municipality: 'municipalities',
+            pharmacy: 'pharmacies',
+            sos: 'sos',
+            shelter: 'shelters',
+            social: 'social'
+          };
+          const layerKey = LAYER_KEY_BY_TYPE[poi.type];
+
+          if (!layerKey || !activeLayers[layerKey]) return null;
           
           return (
             <Marker 
@@ -397,8 +542,7 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
                     poi.type === 'police' ? 'bg-indigo-600' : 
                     poi.type === 'fire' ? 'bg-red-500' :
                     poi.type === 'municipality' ? 'bg-amber-600' :
-                    poi.type === 'pharmacy' ? 'bg-green-600' :
-                    poi.type === 'parish_council' ? 'bg-amber-500' :
+                    poi.type === 'pharmacy' ? 'bg-fuchsia-500' :
                     poi.type === 'shelter' ? 'bg-emerald-600' :
                     poi.type === 'social' ? 'bg-blue-400' :
                     'bg-slate-700'
@@ -421,8 +565,7 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
                     poi.type === 'police' ? "bg-indigo-100 text-indigo-600" : 
                     poi.type === 'fire' ? "bg-red-100 text-red-600" :
                     poi.type === 'municipality' ? "bg-amber-100 text-amber-600" :
-                    poi.type === 'pharmacy' ? "bg-green-100 text-green-600" :
-                    poi.type === 'parish_council' ? "bg-amber-50 text-amber-500" :
+                    poi.type === 'pharmacy' ? "bg-fuchsia-100 text-fuchsia-600" :
                     poi.type === 'shelter' ? "bg-emerald-100 text-emerald-700" :
                     poi.type === 'social' ? "bg-blue-100 text-blue-600" :
                     "bg-slate-100 text-slate-600"
@@ -434,7 +577,6 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
                     {poi.type === 'fire' && <Flame className="w-5 h-5" />}
                     {poi.type === 'municipality' && <Landmark className="w-5 h-5" />}
                     {poi.type === 'pharmacy' && <Pill className="w-5 h-5" />}
-                    {poi.type === 'parish_council' && <Building2 className="w-5 h-5" />}
                     {poi.type === 'sos' && <LifeBuoy className="w-5 h-5" />}
                     {poi.type === 'shelter' && <MapPin className="w-5 h-5" />}
                     {poi.type === 'social' && <Landmark className="w-5 h-5 opacity-70" />}
@@ -442,9 +584,8 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
                   <h4 className="text-[11px] font-black uppercase leading-tight">{poi.name}</h4>
                   <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                     {poi.type === 'hospital' || poi.type === 'health_center' || poi.type === 'health_post' ? 'Unidade de Saúde Médica' :
-                     poi.type === 'social' ? 'Apoio Social / Lar (Não Médico)' :
                      poi.type === 'pharmacy' ? 'Farmácia' :
-                     poi.type === 'parish_council' ? 'Junta de Freguesia' :
+                     poi.type === 'social' ? 'Apoio Social / Lar (Não Médico)' :
                      poi.type === 'municipality' ? 'Ponto Institucional' : 
                      poi.type === 'shelter' ? 'Ponto de Abrigo SOS' : 'Unidade de Emergência'}
                   </p>
@@ -462,78 +603,25 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
                     <MapPin className="w-3 h-3" />
                     Abrir Rota
                   </button>
+                  {reportedPoiIds.has(poi.id) ? (
+                    <p className="w-full mt-2 text-center text-[8px] font-bold text-emerald-600 uppercase tracking-widest">
+                      Reportado, obrigado ✓
+                    </p>
+                  ) : (
+                    <button
+                      onClick={() => reportWrongLocation(poi)}
+                      disabled={reportingPoiId === poi.id}
+                      className="w-full mt-2 py-1.5 text-slate-400 hover:text-red-500 text-[8px] font-bold uppercase tracking-widest transition-all disabled:opacity-50"
+                    >
+                      {reportingPoiId === poi.id ? 'A enviar...' : 'Sinalizar morada errada'}
+                    </button>
+                  )}
                 </div>
               </Popup>
             </Marker>
           );
         })}
       </MapContainer>
-
-      {/* Pesquisa no mapa — estilo Ctrl+F: escreve e vai direto ao mais próximo */}
-      <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2 items-start">
-        <button
-          onClick={() => {
-            setIsSearchOpen(!isSearchOpen);
-            if (isSearchOpen) setSearchQuery('');
-          }}
-          className={cn(
-            "w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-xl backdrop-blur-md border border-white",
-            isSearchOpen ? "bg-slate-900 text-white" : "bg-white/90 text-slate-700 hover:bg-white"
-          )}
-          title="Procurar no mapa"
-        >
-          <Search className="w-4 h-4" />
-        </button>
-
-        <AnimatePresence>
-          {isSearchOpen && (
-            <motion.div
-              initial={{ opacity: 0, x: -20, scale: 0.95 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: -20, scale: 0.95 }}
-              className="bg-white/95 backdrop-blur-md p-3 rounded-2xl border border-white shadow-2xl w-56 space-y-2"
-            >
-              <input
-                autoFocus
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Hospital, farmácia, câmara..."
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-900 placeholder:text-slate-300 placeholder:font-medium focus:outline-none focus:border-slate-300"
-              />
-
-              {searchQuery.trim().length >= 2 && (
-                <div className="max-h-[200px] overflow-y-auto space-y-1 custom-scrollbar">
-                  {searchResults.length === 0 ? (
-                    <p className="text-[9px] text-slate-400 italic text-center py-2">
-                      Nada encontrado por perto. Tente aproximar o mapa da zona que procura.
-                    </p>
-                  ) : (
-                    searchResults.map(poi => (
-                      <button
-                        key={poi.id}
-                        onClick={() => {
-                          setFocusOverride({ lat: poi.location.lat, lng: poi.location.lng });
-                          setIsSearchOpen(false);
-                          setSearchQuery('');
-                        }}
-                        className="w-full text-left p-2 rounded-xl bg-white border border-slate-100 hover:border-slate-300 transition-all"
-                      >
-                        <p className="text-[10px] font-black text-slate-900 leading-tight truncate">{poi.name}</p>
-                        {userLocation && (
-                          <p className="text-[8px] font-bold text-slate-400 mt-0.5">
-                            a {poi.distance.toFixed(1)} km de si
-                          </p>
-                        )}
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
 
       {/* Dynamic Overlay Layer Controls */}
       <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000] items-end">
