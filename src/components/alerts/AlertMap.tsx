@@ -222,14 +222,10 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
             icon={L.divIcon({
               className: 'custom-pin-icon',
               html: `
-                <div class="relative">
-                  <div class="w-6 h-6 rounded-full bg-slate-900 border-2 border-white shadow-md flex items-center justify-center">
-                    <div class="w-2 h-2 rounded-full bg-white"></div>
-                  </div>
-                </div>
+                <div class="w-4 h-4 rounded-full bg-slate-900 border-2 border-white shadow-sm"></div>
               `,
-              iconSize: [24, 24],
-              iconAnchor: [12, 12]
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
             })}
           >
             <Popup>
