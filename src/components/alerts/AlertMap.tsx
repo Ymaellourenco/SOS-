@@ -347,51 +347,6 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
 
   return (
     <div className="relative h-[390px] w-full rounded-[32px] overflow-hidden border border-slate-200 shadow-inner group z-0">
-      {/* Pesquisa livre — escrever o nome de um sítio visto no mapa e ser
-          encaminhado para lá diretamente, sem depender dos marcadores automáticos. */}
-      <div className="absolute top-3 left-3 right-3 z-[1000]">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Pesquisar um local (ex: Farmácia, Câmara...)"
-            className="w-full pl-9 pr-9 py-2.5 rounded-full bg-white/95 backdrop-blur border border-slate-200 shadow-md text-[11px] font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-medium focus:outline-none focus:ring-2 focus:ring-slate-900"
-          />
-          {isSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />}
-          {!isSearching && searchQuery && (
-            <button
-              onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchError(null); }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {(searchResults.length > 0 || searchError) && (
-          <div className="mt-1.5 bg-white rounded-2xl border border-slate-200 shadow-lg overflow-hidden max-h-[220px] overflow-y-auto">
-            {searchError && searchResults.length === 0 && (
-              <p className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wide">{searchError}</p>
-            )}
-            {searchResults.map((result, i) => (
-              <button
-                key={i}
-                onClick={() => selectSearchResult(result)}
-                className="w-full text-left px-4 py-2.5 hover:bg-slate-50 border-b border-slate-100 last:border-0 flex items-start gap-2"
-              >
-                <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                <span>
-                  <span className="block text-[11px] font-black text-slate-900 leading-tight">{result.name}</span>
-                  {result.address && <span className="block text-[9px] text-slate-500 mt-0.5">{result.address}</span>}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
       <MapContainer 
         center={center} 
         zoom={zoom} 
@@ -400,8 +355,8 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
         zoomControl={false}
       >
         <TileLayer
-          attribution='&copy; OpenStreetMap'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         />
         <ZoomControl position="bottomright" />
         
@@ -426,7 +381,7 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
             icon={L.divIcon({
               className: 'custom-pin-icon',
               html: `
-                <div class="relative -translate-y-1/2">
+                <div class="relative">
                   <div class="w-9 h-9 rounded-full bg-slate-900 border-2 border-white shadow-lg flex items-center justify-center">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>
                   </div>
@@ -622,82 +577,6 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
           );
         })}
       </MapContainer>
-
-      {/* Dynamic Overlay Layer Controls */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000] items-end">
-        <button 
-          onClick={() => setShowNearestPoints(!showNearestPoints)}
-          className={cn(
-            "w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-xl bg-white/90 backdrop-blur-md border border-white",
-            showNearestPoints ? "bg-red-600 text-white border-red-700" : "text-red-600 hover:bg-white"
-          )}
-          title="Pontos de Ajuda Próximos"
-        >
-          <HeartPulse className="w-4 h-4" />
-        </button>
-
-        <AnimatePresence>
-          {showNearestPoints && (
-            <motion.div
-              initial={{ opacity: 0, x: 20, scale: 0.95 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 20, scale: 0.95 }}
-              className="bg-white/95 backdrop-blur-md p-3 rounded-2xl border border-white shadow-2xl w-48 space-y-2"
-            >
-              <div className="space-y-2">
-                <div className="flex items-center justify-between px-0.5">
-                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Ajuda Mais Próxima</p>
-                  <HeartPulse className="w-2.5 h-2.5 text-red-500" />
-                </div>
-
-                <div className="max-h-[220px] overflow-y-auto pr-1 space-y-1.5 custom-scrollbar">
-                  {nearestPOIs.length === 0 ? (
-                    <p className="text-[9px] text-slate-400 italic text-center py-3">Procurando pontos de apoio...</p>
-                  ) : (
-                    nearestPOIs.map(poi => (
-                      <button
-                        key={poi.id}
-                        onClick={() => openInGoogleMaps(poi.location.lat, poi.location.lng, poi.name)}
-                        className="w-full text-left p-1.5 rounded-xl bg-white border border-slate-100 hover:border-red-200 hover:bg-red-50/30 transition-all group"
-                      >
-                        <div className="flex items-start gap-1.5">
-                          <div className={cn(
-                            "w-5 h-5 rounded-lg flex items-center justify-center shrink-0 text-white",
-                            poi.type === 'hospital' ? "bg-emerald-500" : 
-                            poi.type === 'health_center' ? "bg-teal-500" :
-                            poi.type === 'police' ? "bg-indigo-600" : 
-                            poi.type === 'fire' ? "bg-red-600" : "bg-slate-600"
-                          )}>
-                             {poi.type === 'hospital' && <HeartPulse className="w-3 h-3" />}
-                             {poi.type === 'health_center' && <Stethoscope className="w-3 h-3" />}
-                             {poi.type === 'police' && <ShieldCheck className="w-3 h-3" />}
-                             {poi.type === 'fire' && <Flame className="w-3 h-3" />}
-                             {['hospital', 'health_center', 'police', 'fire'].indexOf(poi.type) === -1 && <MapPin className="w-3 h-3" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[8px] font-black uppercase text-slate-900 leading-tight truncate">
-                              {poi.name}
-                            </p>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className="text-[7px] font-bold text-red-600 uppercase">
-                                {poi.distance.toFixed(1)} km
-                              </span>
-                              <span className="text-[7px] text-slate-400 font-medium">|</span>
-                              <span className="text-[7px] text-slate-500 font-medium truncate">
-                                {poi.address || 'Ver no mapa'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
 
       <div className="absolute bottom-4 left-4 flex flex-col gap-2 z-[1000] pointer-events-none">
         <AnimatePresence>
