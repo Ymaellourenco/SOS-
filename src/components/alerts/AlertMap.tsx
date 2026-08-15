@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Alert } from '../../types';
-import { MapPin, Navigation2 } from 'lucide-react';
+import { MapPin, Navigation2, Flame, Cross, Landmark, Users, Shield, Stethoscope } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 // Import Leaflet CSS
@@ -188,6 +188,7 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
   };
 
   return (
+    <div>
     <div className="relative h-[390px] w-full rounded-[32px] overflow-hidden border border-slate-200 shadow-inner group z-0">
       <MapContainer 
         center={center} 
@@ -331,6 +332,26 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
       `}</style>
+    </div>
+
+    {/* Legenda dos ícones que aparecem desenhados no mapa (fazem parte da própria
+        imagem do mapa, não são bolinhas nossas) — para ajudar a reconhecer o que é
+        cada símbolo quando se está à procura de um sítio específico. */}
+    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5 px-1">
+      {[
+        { Icon: Cross, label: 'Hospital / Saúde', color: 'text-red-500' },
+        { Icon: Stethoscope, label: 'Centro de Saúde', color: 'text-teal-500' },
+        { Icon: Flame, label: 'Bombeiros', color: 'text-orange-500' },
+        { Icon: Shield, label: 'Polícia / GNR', color: 'text-indigo-500' },
+        { Icon: Landmark, label: 'Câmara Municipal', color: 'text-amber-600' },
+        { Icon: Users, label: 'Junta de Freguesia', color: 'text-slate-500' },
+      ].map(({ Icon, label, color }) => (
+        <div key={label} className="flex items-center gap-1">
+          <Icon className={cn("w-2.5 h-2.5 shrink-0", color)} />
+          <span className="text-[7px] font-bold text-slate-500 uppercase tracking-tight whitespace-nowrap">{label}</span>
+        </div>
+      ))}
+    </div>
     </div>
   );
 }

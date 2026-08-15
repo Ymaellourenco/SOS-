@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Save, User as UserIcon, Droplets, Pill, AlertTriangle, FileText, Calendar, Weight, Ruler, LogIn, LogOut, Trash2, Volume2, Play, Mic } from 'lucide-react';
+import { X, Save, User as UserIcon, Droplets, Pill, AlertTriangle, FileText, Calendar, Weight, Ruler, LogIn, LogOut, Trash2, Volume2, Mic } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { UserProfileData } from '../../types';
 import { db, auth } from '../../lib/firebase';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut, deleteUser } from 'firebase/auth';
-import { playNotificationPreview, requestNotificationPermission, sendAlertNotification, getFCMToken } from '../../lib/notifications';
+import { requestNotificationPermission, getFCMToken } from '../../lib/notifications';
 import { voiceService } from '../../lib/voiceService';
 import { speechService } from '../../lib/voiceCommandService';
 import { toast } from 'react-hot-toast';
@@ -46,6 +46,10 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
   useEffect(() => {
     setVoiceEnabled(voiceService.isEnabled());
     setVoiceCommandsEnabled(localStorage.getItem('sos_mais_voice_commands') !== 'false');
+    // Som de notificação: atribuído automaticamente, sem escolha manual do utilizador.
+    if (!profile.notificationSound) {
+      handleFieldChange('notificationSound', NOTIFICATION_SOUNDS[0].url);
+    }
   }, []);
 
   const toggleVoice = () => {
@@ -104,6 +108,15 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
       if ('fcm_token' in localStorage) {
         setFcmToken(localStorage.getItem('fcm_token'));
       }
+
+      // Diagnóstico de notificações: pede a permissão e obtém o token automaticamente,
+      // sem precisar de um botão manual ("Sincronizar Antena").
+      requestNotificationPermission().then(async (granted) => {
+        if (granted) {
+          const token = await getFCMToken();
+          setFcmToken(token);
+        }
+      }).catch((e) => logger.warn('Falha ao sincronizar notificações automaticamente', e));
       
       const unsubscribe = auth.onAuthStateChanged((user) => {
         loadProfile(user);
@@ -281,32 +294,14 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* System Health Check */}
-              <div className="space-y-2 mb-2">
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="bg-slate-50 border border-black/5 p-2 rounded-2xl flex flex-col items-center justify-center text-center">
-                    <span className="text-[7px] font-black uppercase text-slate-400 mb-0.5">Antena</span>
-                    <div className={cn("w-1.5 h-1.5 rounded-full", fcmToken ? "bg-green-500" : "bg-red-500")} />
-                  </div>
-                  <div className="bg-slate-50 border border-black/5 p-2 rounded-2xl flex flex-col items-center justify-center text-center">
-                    <span className="text-[7px] font-black uppercase text-slate-400 mb-0.5">Nuvem</span>
-                    <div className={cn("w-1.5 h-1.5 rounded-full", currentUser ? "bg-green-500" : "bg-amber-500")} />
-                  </div>
-                  <div className="bg-slate-50 border border-black/5 p-2 rounded-2xl flex flex-col items-center justify-center text-center">
-                    <span className="text-[7px] font-black uppercase text-slate-400 mb-0.5">GPS</span>
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                  </div>
-                </div>
-
-                {window.self !== window.top && (
-                  <button 
-                    onClick={() => window.open(window.location.href, '_blank')}
-                    className="w-full py-2 bg-blue-600 text-white rounded-xl text-[8px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 active:scale-95 transition-transform"
-                  >
-                    Abrir em Novo Separador (Ativar SOS)
-                  </button>
-                )}
-              </div>
+              {window.self !== window.top && (
+                <button 
+                  onClick={() => window.open(window.location.href, '_blank')}
+                  className="w-full py-2 bg-blue-600 text-white rounded-xl text-[8px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 active:scale-95 transition-transform"
+                >
+                  Abrir em Novo Separador (Ativar SOS)
+                </button>
+              )}
 
               {/* Profile Photo Display */}
               <div className="flex flex-col items-center justify-center pb-2">
@@ -500,73 +495,6 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                 </div>
 
                 <div className="group">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Alergias Graves</label>
-                  <div className="relative">
-                    <AlertTriangle className="absolute left-4 top-4 w-4 h-4 text-slate-300 transition-colors" />
-                    <textarea 
-                      value={profile.allergies}
-                      onChange={e => handleFieldChange('allergies', e.target.value)}
-                      placeholder="Ex: Penicilina, Amendoins, Picadas de Abelha..."
-                      rows={2}
-                      className="w-full bg-slate-50 border border-slate-100 rounded-3xl py-4 pl-11 pr-6 text-sm outline-none focus:bg-white focus:border-red-100 transition-all text-slate-900 font-medium resize-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="group">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Acessibilidade: Ativação por Voz</label>
-                  <div className="space-y-2">
-                    <div 
-                      onClick={toggleVoice}
-                      className="bg-slate-50 border border-slate-100 rounded-[32px] p-4 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-white p-2 rounded-xl shadow-sm">
-                          <Volume2 className={cn("w-4 h-4", voiceEnabled ? "text-red-500" : "text-slate-300")} />
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-black uppercase text-slate-900 block">Navegação por Voz</span>
-                          <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">Lê os botões e estados da app</span>
-                        </div>
-                      </div>
-                      <div className={cn(
-                        "w-10 h-5 rounded-full transition-colors relative",
-                        voiceEnabled ? "bg-red-500" : "bg-slate-200"
-                      )}>
-                        <motion.div 
-                          animate={{ x: voiceEnabled ? 20 : 2 }}
-                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
-                        />
-                      </div>
-                    </div>
-
-                    <div 
-                      onClick={toggleVoiceCommands}
-                      className="bg-slate-50 border border-slate-100 rounded-[32px] p-4 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-white p-2 rounded-xl shadow-sm">
-                          <Mic className={cn("w-4 h-4", voiceCommandsEnabled ? "text-red-500" : "text-slate-300")} />
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-black uppercase text-slate-900 block">Comandos de Voz</span>
-                          <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">Diga "SOS" para ativar ajuda imediata</span>
-                        </div>
-                      </div>
-                      <div className={cn(
-                        "w-10 h-5 rounded-full transition-colors relative",
-                        voiceCommandsEnabled ? "bg-red-500" : "bg-slate-200"
-                      )}>
-                        <motion.div 
-                          animate={{ x: voiceCommandsEnabled ? 20 : 2 }}
-                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="group">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Condições Médicas Preexistentes</label>
                   <div className="relative">
                     <FileText className="absolute left-4 top-4 w-4 h-4 text-slate-300 transition-colors" />
@@ -581,132 +509,73 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                 </div>
 
                 <div className="group">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Som de Notificação (Crítico)</label>
-                  <div className="bg-slate-50 border border-slate-100 rounded-[32px] p-2 space-y-1">
-                    {NOTIFICATION_SOUNDS.map((sound) => (
-                      <div 
-                        key={sound.id}
-                        className={cn(
-                          "flex items-center justify-between p-3 rounded-2xl transition-all cursor-pointer",
-                          profile.notificationSound === sound.url 
-                            ? "bg-white shadow-sm border border-black/5" 
-                            : "hover:bg-black/5 border border-transparent"
-                        )}
-                        onClick={() => handleFieldChange('notificationSound', sound.url)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={cn(
-                            "w-2 h-2 rounded-full",
-                            profile.notificationSound === sound.url ? "bg-red-500" : "bg-slate-200"
-                          )} />
-                          <span className={cn(
-                            "text-xs font-bold uppercase tracking-tight",
-                            profile.notificationSound === sound.url ? "text-slate-900" : "text-slate-500"
-                          )}>
-                            {sound.name}
-                          </span>
-                        </div>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            playNotificationPreview(sound.url);
-                            voiceService.speak(`Ouvir ${sound.name}`);
-                          }}
-                          className="p-2 bg-white rounded-xl shadow-sm border border-black/5 hover:scale-110 active:scale-95 transition-all group/play"
-                        >
-                          <Play className="w-3 h-3 text-slate-400 group-hover/play:text-red-500" />
-                        </button>
-                      </div>
-                    ))}
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Alergias Graves</label>
+                  <div className="relative">
+                    <AlertTriangle className="absolute left-4 top-4 w-4 h-4 text-slate-300 transition-colors" />
+                    <textarea 
+                      value={profile.allergies}
+                      onChange={e => handleFieldChange('allergies', e.target.value)}
+                      placeholder="Ex: Penicilina, Amendoins, Picadas de Abelha..."
+                      rows={2}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-3xl py-4 pl-11 pr-6 text-sm outline-none focus:bg-white focus:border-red-100 transition-all text-slate-900 font-medium resize-none"
+                    />
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Diagnóstico de Sistema</label>
-                  <div className="bg-slate-50 border border-slate-100 rounded-[32px] p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                       <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Estado de Notificações</span>
-                       <span className={cn(
-                         "px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest",
-                         typeof Notification !== 'undefined' && Notification.permission === 'granted' ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                       )}>
-                         {typeof Notification !== 'undefined' ? (Notification.permission === 'granted' ? 'Ativo (Granted)' : 'Inativo (Denied/Default)') : 'Indisponível'}
-                       </span>
-                    </div>
+                <div className="bg-slate-50 p-5 rounded-[28px] border border-black/5">
+                  <p className="text-[10px] leading-relaxed text-slate-500 font-medium">
+                    <span className="font-black uppercase text-slate-400 block mb-1">Privacidade de Dados:</span>
+                    Estas informações são guardadas localmente no seu dispositivo e servem exclusivamente para o seu apoio em caso de emergência. O SOS MAIS não utiliza estes dados para qualquer outro fim.
+                  </p>
+                </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <button 
-                         onClick={async () => {
-                           const granted = await requestNotificationPermission();
-                           if (granted) {
-                             const token = await getFCMToken();
-                             setFcmToken(token);
-                             handleSave();
-                             toast.success('Antena Calibrada');
-                           }
-                         }}
-                         className="py-3 bg-white border border-black/5 rounded-2xl text-[8px] font-black uppercase tracking-widest text-[#1d1d1f] shadow-sm active:scale-95 transition-transform"
-                      >
-                        Sincronizar Antena
-                      </button>
-                      <button 
-                         onClick={async () => {
-                           // Try local first
-                           sendAlertNotification('TESTE SOS', 'O sistema está a operar na frequência correta.', 'medium');
-                           
-                           // If token exists, try server push
-                           if (fcmToken) {
-                             try {
-                               await fetch('/api/notifications/send', {
-                                 method: 'POST',
-                                 headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({
-                                   token: fcmToken,
-                                   title: '📡 TESTE DE TRANSMISSÃO',
-                                   body: 'Sinal de rádio simulado via Nuvem com sucesso.'
-                                 })
-                               });
-                               toast.success('Sinal Enviado');
-                             } catch (e) {
-                               logger.error('Server push failed', e);
-                               toast.error('Erro de Sinal');
-                             }
-                           }
-                         }}
-                         className="py-3 bg-red-600 text-white rounded-2xl text-[8px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95 transition-transform"
-                      >
-                        Testar Rádio
-                      </button>
-                    </div>
-
-                    {fcmToken && (
-                      <div className="p-3 bg-slate-100 rounded-xl overflow-hidden">
-                        <span className="text-[7px] font-black uppercase text-slate-400 block mb-1">Token de Dispositivo (Diagnóstico):</span>
-                        <code className="text-[7px] break-all text-slate-600 font-mono inline-block max-h-12 overflow-y-auto w-full">
-                          {fcmToken}
-                        </code>
+                <div className="group">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Acessibilidade: Ativação por Voz</label>
+                  <div className="flex gap-1.5">
+                    <div 
+                      onClick={toggleVoice}
+                      className="flex-1 bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 flex items-center justify-between gap-1 cursor-pointer hover:bg-slate-100 transition-colors"
+                      title="Navegação por Voz — Lê os botões e estados da app"
+                    >
+                      <div className="flex items-center gap-1 min-w-0">
+                        <Volume2 className={cn("w-2.5 h-2.5 shrink-0", voiceEnabled ? "text-red-500" : "text-slate-300")} />
+                        <span className="text-[7px] font-black uppercase text-slate-900 truncate">Navegação</span>
                       </div>
-                    )}
+                      <div className={cn(
+                        "w-5 h-2.5 rounded-full transition-colors relative shrink-0",
+                        voiceEnabled ? "bg-red-500" : "bg-slate-200"
+                      )}>
+                        <motion.div 
+                          animate={{ x: voiceEnabled ? 10 : 1 }}
+                          className="absolute top-0.5 w-1.5 h-1.5 bg-white rounded-full shadow-sm"
+                        />
+                      </div>
+                    </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-black/5">
-                       <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Modo Offline</span>
-                       <span className={cn(
-                         "px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest",
-                         'serviceWorker' in navigator ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                       )}>
-                         {'serviceWorker' in navigator ? 'Suportado' : 'Não Suportado'}
-                       </span>
+                    <div 
+                      onClick={toggleVoiceCommands}
+                      className="flex-1 bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 flex items-center justify-between gap-1 cursor-pointer hover:bg-slate-100 transition-colors"
+                      title='Comandos de Voz — Diga "SOS" para ativar ajuda imediata'
+                    >
+                      <div className="flex items-center gap-1 min-w-0">
+                        <Mic className={cn("w-2.5 h-2.5 shrink-0", voiceCommandsEnabled ? "text-red-500" : "text-slate-300")} />
+                        <span className="text-[7px] font-black uppercase text-slate-900 truncate">Comandos</span>
+                      </div>
+                      <div className={cn(
+                        "w-5 h-2.5 rounded-full transition-colors relative shrink-0",
+                        voiceCommandsEnabled ? "bg-red-500" : "bg-slate-200"
+                      )}>
+                        <motion.div 
+                          animate={{ x: voiceCommandsEnabled ? 10 : 1 }}
+                          className="absolute top-0.5 w-1.5 h-1.5 bg-white rounded-full shadow-sm"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
+
               </div>
 
-              <div className="bg-slate-50 p-5 rounded-[28px] border border-black/5">
-                <p className="text-[10px] leading-relaxed text-slate-500 font-medium">
-                  <span className="font-black uppercase text-slate-400 block mb-1">Privacidade de Dados:</span>
-                  Estas informações são guardadas localmente no seu dispositivo e servem exclusivamente para o seu apoio em caso de emergência. O SOS MAIS não utiliza estes dados para qualquer outro fim.
-                </p>
-              </div>
             </div>
 
             {/* Footer */}
