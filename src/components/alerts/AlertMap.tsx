@@ -107,9 +107,19 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
     setCustomPin({ lat, lng, label: null, loadingLabel: true });
     try {
-      const response = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+      // Usa a MESMA fonte de morada que a página inicial (/api/geocode), em vez de
+      // uma diferente — antes, o mapa usava só o TomTom e a página inicial usava
+      // Nominatim (com vários fallbacks), o que podia dar moradas diferentes para
+      // a mesma coordenada. Agora usam sempre a mesma lógica, com o mesmo resultado.
+      const response = await fetch(`/api/geocode?lat=${lat}&lon=${lng}`, { signal: AbortSignal.timeout(5000) });
       const data = await response.json();
-      setCustomPin({ lat, lng, label: data.label || null, loadingLabel: false });
+      const addr = data.address || {};
+      const mainStreet = addr.road || addr.pedestrian || addr.path || addr.square;
+      const area = addr.suburb || addr.neighbourhood || addr.village || addr.city;
+      const label = mainStreet
+        ? (addr.house_number ? `${mainStreet}, ${addr.house_number}` : mainStreet)
+        : (area || data.name || data.display_name || null);
+      setCustomPin({ lat, lng, label, loadingLabel: false });
     } catch {
       setCustomPin({ lat, lng, label: null, loadingLabel: false });
     }
@@ -213,13 +223,13 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
               className: 'custom-pin-icon',
               html: `
                 <div class="relative">
-                  <div class="w-9 h-9 rounded-full bg-slate-900 border-2 border-white shadow-lg flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>
+                  <div class="w-6 h-6 rounded-full bg-slate-900 border-2 border-white shadow-md flex items-center justify-center">
+                    <div class="w-2 h-2 rounded-full bg-white"></div>
                   </div>
                 </div>
               `,
-              iconSize: [36, 36],
-              iconAnchor: [18, 18]
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
             })}
           >
             <Popup>
