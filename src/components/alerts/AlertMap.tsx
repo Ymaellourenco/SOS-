@@ -355,8 +355,8 @@ export function AlertMap({ alerts, userLocation, viewScope = 'nearby' }: AlertMa
         zoomControl={false}
       >
         <TileLayer
-          attribution='Imagens de satélite &copy; TomTom'
-          url="/api/tile/sat/{z}/{x}/{y}"
+          attribution='&copy; OpenStreetMap'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <ZoomControl position="bottomright" />
         
