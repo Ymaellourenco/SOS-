@@ -289,8 +289,14 @@ async function startServer() {
             signal: AbortSignal.timeout(4000)
           });
           if (geoDescResponse.ok) {
-            const text = await geoDescResponse.text();
-            return res.json({ display_name: text });
+            const rawText = await geoDescResponse.text();
+            // O geodescription.com cola sempre um aviso comercial ao fim do texto
+            // (ex: "NOTE: THIS IS FREE LIMITED SERVICE..."), que estava a aparecer
+            // colado à morada, como se fizesse parte dela. Cortamos tudo a partir
+            // desse aviso, ficando só com a morada real.
+            const cleanText = rawText.split(/NOTE:/i)[0].trim();
+            if (!cleanText) return res.json({ display_name: null });
+            return res.json({ display_name: cleanText });
           }
         } catch (e) {
           console.warn("[Geocode] Geodescription failed");
