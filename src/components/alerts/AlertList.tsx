@@ -44,7 +44,15 @@ export function AlertList() {
   } = useAlerts();
 
   const [filterMode, setFilterMode] = useState<'all' | 'nearby'>('nearby');
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'map'>(() => {
+    // Se a pessoa veio do chat da IA a pedir para "escolher no mapa", abre já
+    // diretamente na vista de mapa, em vez de na lista — poupa-lhe um toque extra.
+    if (sessionStorage.getItem('sos_mais_open_map') === 'true') {
+      sessionStorage.removeItem('sos_mais_open_map');
+      return 'map';
+    }
+    return 'list';
+  });
   const [tick, setTick] = useState(0);
   const [fireRisk, setFireRisk] = useState<{ rcm: number; riskLabel: string } | null>(null);
 
